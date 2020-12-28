@@ -1,0 +1,9 @@
+README.md
+setup.py
+multipole/__init__.py
+multipole/multipole_dens.py
+multipole_dens.egg-info/PKG-INFO
+multipole_dens.egg-info/SOURCES.txt
+multipole_dens.egg-info/dependency_links.txt
+multipole_dens.egg-info/requires.txt
+multipole_dens.egg-info/top_level.txt
