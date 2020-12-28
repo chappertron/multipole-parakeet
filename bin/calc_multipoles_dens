@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+import matplotlib.pyplot as plt
+import time
+import argparse
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water.. This can be done for just a single frame, or an entire trajectory')
+    parser.add_argument("topfile",help='The topology file name',type=str)
+    # optional trajectory argument -t
+    parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
+    parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
+    parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
+    
+    args = parser.parse_args()
+    
+    if args.verbose: print('Started', time.strftime("%a, %d %b %Y %H:%M:%S"))
+
+    if args.trajfile: 
+        u = mda.Universe(args.topfile,args.trajfile,in_memory = args.inmem)
+    else:
+        u = mda.Universe(args.topfile,in_memory = args.inmem)
+	
+
+    # add charges and masses for tip4p/2005
+
+    u.add_TopologyAttr('charge')
+    u.select_atoms('name O').charges = 0
+    u.select_atoms('name O').masses = 15.9994
+    u.select_atoms('name H').charges = 0.5564
+    u.select_atoms('name H').masses = 1.008
+    u.select_atoms('name M').charges = -1.1128
+    u.select_atoms('name M').masses = 0
+
+
+    #
+    multip = Multipoles(u.atoms,verbose=True)
+    multip.run()
+    z = np.linspace(multip.ll,multip.ul,multip.nbins)
+
+    np.savetxt('profs.dat',[z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:],
+    multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]],header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
+
+    plt.plot(z,multip.charge_dens,label='rho')
+    plt.plot(z, multip.quadrapole[2,2,:],label='P_z')
+    plt.plot(z,multip.dipole[2,:],label='Q_ZZ')
+    plt.savefig('profs.png')
+    plt.show()
+
+    print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
