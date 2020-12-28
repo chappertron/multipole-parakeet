@@ -6,6 +6,7 @@ setup(
     version='0.0.1',
     author='Aidan C',
     packages=['multipole'],
+    scripts = ['bin/calc_multipoles_dens'],
     url='http://pypi.python.org/pypi/PackageName/',
     description='An awesome package that calculates dipole, quadrapole and charge densities',
     long_description=open('README.md').read(),

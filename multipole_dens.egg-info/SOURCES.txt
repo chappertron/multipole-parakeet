@@ -1,5 +1,6 @@
 README.md
 setup.py
+bin/calc_multipoles_dens
 multipole/__init__.py
 multipole/multipole_dens.py
 multipole_dens.egg-info/PKG-INFO
