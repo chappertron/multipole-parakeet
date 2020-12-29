@@ -2,6 +2,8 @@
 import matplotlib.pyplot as plt
 import time
 import argparse
+import MDAnalysis as mda
+from multipole import Multipoles
 
 if __name__ == "__main__":
 
@@ -34,8 +36,9 @@ if __name__ == "__main__":
 
 
     #
-    multip = Multipoles(u.atoms,verbose=True)
+    multip = Multipoles(u.atoms,verbose=args.verbose)
     multip.run()
+    if args.verbose: print('Calculation finished')
     z = np.linspace(multip.ll,multip.ul,multip.nbins)
 
     np.savetxt('profs.dat',[z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:],
@@ -45,6 +48,9 @@ if __name__ == "__main__":
     plt.plot(z, multip.quadrapole[2,2,:],label='P_z')
     plt.plot(z,multip.dipole[2,:],label='Q_ZZ')
     plt.savefig('profs.png')
-    plt.show()
+    plt.close()
 
-    print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
+    if args.verbose: print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
+
+ 
+    #print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
