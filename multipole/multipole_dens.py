@@ -105,17 +105,20 @@ class Multipoles(AnalysisBase):
         rH1 = self.Hatoms.positions[::2] #select everyother H
         rH2 = self.Hatoms.positions[1::2]
         rM = self.Matoms.positions
+        # wrapping coords 
+        rMw = rM % self.dimensions # mod of the positions with respect to the box dimensions
 
         Q = self.calculate_Q(rM,[rH1,rH2],qH) # full tensor
         #print(Q.shape)
         mus = self.calculate_dip(rM,[rH1,rH2],qH)
         
         zM = rM[:,self._axind] # z position 
+        zMw = rMw[:,self._axind] 
         #zposes = vstack([zM]*3).T
         
         #print(shape(zposes))
-        mu_hist = np.vstack([np.histogram(zM,bins = self.nbins,weights = mus[:,i],range = self.range)[0] for i in range(3)])
-        Q_hist = np.stack([[np.histogram(zM,bins = self.nbins,weights= Q[:,i,j],range = self.range)[0] for i in range(3)] for j in range(3)])
+        mu_hist = np.vstack([np.histogram(zMw,bins = self.nbins,weights = mus[:,i],range = self.range)[0] for i in range(3)])
+        Q_hist = np.stack([[np.histogram(zMw,bins = self.nbins,weights= Q[:,i,j],range = self.range)[0] for i in range(3)] for j in range(3)])
         #print(Q_hist.shape)
         
         # print(mu_hist.dtype)
@@ -123,7 +126,7 @@ class Multipoles(AnalysisBase):
         
         self.dipole += mu_hist
         self.quadrapole += Q_hist
-        self.charge_dens += np.histogram(self.chargedatoms.positions[:,self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)[0]
+        self.charge_dens += np.histogram(self.chargedatoms.positions[:,self._axind] % self.dimensions[self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)[0]
 
 
 
