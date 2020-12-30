@@ -42,7 +42,7 @@ if __name__ == "__main__":
     if args.verbose: print('Calculation finished')
     z = np.linspace(multip.ll,multip.ul,multip.nbins)
     if args.verbose: print('Starting save')
-    np.savetxt('profs.dat',[z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]],header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
+    np.savetxt('profs.dat',np.array([z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]]).T,header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
 
     plt.plot(z,multip.charge_dens,label='rho')
     plt.plot(z, multip.quadrapole[2,2,:],label='P_z')
