@@ -14,6 +14,8 @@ if __name__ == "__main__":
     parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
     parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
+    parser.add_argument("-M","--M_name",default="M")
+    parser.add_argument("-H","--H_name",default="H",nargs='+',action='extend')
     
     args = parser.parse_args()
     
@@ -28,16 +30,16 @@ if __name__ == "__main__":
     # add charges and masses for tip4p/2005
 
     u.add_TopologyAttr('charge')
-    u.select_atoms('name O').charges = 0
-    u.select_atoms('name O').masses = 15.9994
-    u.select_atoms('name H').charges = 0.5564
-    u.select_atoms('name H').masses = 1.008
-    u.select_atoms('name M').charges = -1.1128
-    u.select_atoms('name M').masses = 0
+    # u.select_atoms('name O').charges = 0
+    # u.select_atoms('name O').masses = 15.9994
+    u.select_atoms(f"name {' '.join(args.H_name)}").charges = 0.5564 # jointogether the list of hydrogen atom names
+    u.select_atoms(f"name {' '.join(args.H_name)}").masses = 1.008
+    u.select_atoms(f'name {args.M_name}').charges = -1.1128
+    u.select_atoms(f'name {args.M_name}').masses = 0
 
 
     #
-    multip = Multipoles(u.atoms,verbose=args.verbose)
+    multip = Multipoles(u.atoms,verbose=args.verbose,centre=args.M_name,H_types=args.H_name)
     multip.run()
     if args.verbose: print('Calculation finished')
     z = np.linspace(multip.ll,multip.ul,multip.nbins)

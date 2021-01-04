@@ -9,7 +9,7 @@ class Multipoles(AnalysisBase):
 
     _axis_map = {'x':0,'y':1,'z':2}
 
-    def __init__(self, select, centre = 'M',grouping = 'water', axis = 'z' ,ll = 0,ul = None, binsize=0.25, **kwargs):
+    def __init__(self, select, centre = 'M',grouping = 'water', axis = 'z' ,ll = 0,ul = None, binsize=0.25,H_types = ['H'], **kwargs):
         super(Multipoles, self).__init__(select.universe.trajectory,
                                             **kwargs)
         # grab init 
@@ -25,8 +25,11 @@ class Multipoles(AnalysisBase):
         # AtomGroup.wrap())
         
         # Box sides
-        self.centretype = 'M' # name or type of atom central atom per molecule
+        self.centretype = centre # name or type of atom central atom per molecule
         self.grouping = grouping
+
+        if self.grouping == 'water':
+            self.H_types = H_types
 
         # currently only supports orthogonal boxes
         self._axind = self._axis_map[axis] # get the index for the axis used here
@@ -91,9 +94,9 @@ class Multipoles(AnalysisBase):
         #self.totalmass = np.sum(self.masses)
 
         self.Matoms = self._universe.select_atoms(f'name {self.centretype}')
-        self.Hatoms = self._universe.select_atoms('name H')
-        self.Oatoms = self._universe.select_atoms('name O')
-        self.chargedatoms = self._universe.select_atoms(f'name H {self.centretype}')
+        self.Hatoms = self._universe.select_atoms(f"name {' '.join(self.H_types)}") #joining all the H types with a string
+        #self.Oatoms = self._universe.select_atoms('name O')
+        self.chargedatoms = self._universe.select_atoms(f"name {' '.join(self.H_types)} {self.centretype}")
 
     def _single_frame(self):
 
@@ -250,7 +253,7 @@ if __name__ == "__main__":
 
     print('Started', time.strftime("%a, %d %b %Y %H:%M:%S"))
 
-    u = mda.Universe('300K/rep3/addedMs.gro','300K/rep3/addedMs.dcd')
+    u = mda.Universe('../300K/rep3/addedMs.gro','../300K/rep3/addedMs.dcd')
 
     # add charges and masses for tip4p/2005
 
