@@ -15,7 +15,7 @@ if __name__ == "__main__":
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
     parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
     parser.add_argument("-M","--M_name",default="M")
-    parser.add_argument("-H","--H_name",default="H",nargs='+',action='extend')
+    parser.add_argument("-H","--H_name",default="H",nargs='+',action='extend',type=str)
     
     args = parser.parse_args()
     
