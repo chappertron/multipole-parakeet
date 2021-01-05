@@ -4,6 +4,8 @@ import time
 import argparse
 import numpy as np
 import MDAnalysis as mda
+
+#from MDAnalysis.transformations import unwrap
 from multipole import Multipoles
 
 if __name__ == "__main__":
@@ -15,6 +17,8 @@ if __name__ == "__main__":
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
     parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
     parser.add_argument("-M","--M_name",default="M")
+    parser.add_argument("-b","--begin",default="0")
+    parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
     
     args = parser.parse_args()
@@ -25,6 +29,19 @@ if __name__ == "__main__":
         u = mda.Universe(args.topfile,args.trajfile,in_memory = args.inmem)
     else:
         u = mda.Universe(args.topfile,in_memory = args.inmem)
+
+
+    #checking if the coords need to be unwrapped:
+
+    if (u.dimensions[:3]-u.atoms.positions <0).any():
+        # then coords are definitely already unwrapped, nothing needs to be done
+        if args.verbose: print('Coordinates definitely unwrapped. Proceeding to calculation')
+    else:
+        #coords may or may not be unwrapped. Apply transformation just to be safe
+        if args.verbose: print('Coordinates might not be unwrapped, unwrapping in case.')
+        ag = u.atoms
+        unwrap_transform = mda.transformations.unwrap(ag)
+        u.trajectory.add_transformations(unwrap_transform)
 	
 
     # add charges and masses for tip4p/2005
