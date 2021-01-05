@@ -23,28 +23,34 @@ if __name__ == "__main__":
     parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
     
+    parser.add_argument("--check_unwrapped",default=False, action="store_true")
+    
     args = parser.parse_args()
     
     if args.verbose: print('Started', time.strftime("%a, %d %b %Y %H:%M:%S"))
 
     if args.trajfile: 
         u = mda.Universe(args.topfile,args.trajfile,in_memory = args.inmem)
+        #set timestep to last for checking of unwrapping
+        u.trajectory[-1]
     else:
         u = mda.Universe(args.topfile,in_memory = args.inmem)
 
 
-    #checking if the coords need to be unwrapped:
+    #checking if the coords in last step need to be unwrapped:
 
-    if (u.dimensions[:3]-u.atoms.positions <0).any():
+
+    if ((u.dimensions[:3]-u.atoms.positions < 0 ).any()) or not args.check_unwrapped:
         # then coords are definitely already unwrapped, nothing needs to be done
-        if args.verbose: print('Coordinates definitely unwrapped. Proceeding to calculation')
+        if args.verbose: print('Coordinates definitely unwrapped or not checked. Proceeding to calculation')
     else:
         #coords may or may not be unwrapped. Apply transformation just to be safe
         if args.verbose: print('Coordinates might not be unwrapped, unwrapping in case.')
         ag = u.atoms
         unwrap_transform = MDAnalysis.transformations.unwrap(ag)
         u.trajectory.add_transformations(unwrap_transform)
-	
+
+    if args.trajfile: u.trajectory[0] #go back to first step # only needed if trajectory is included
 
     # add charges and masses for tip4p/2005
 
