@@ -4,6 +4,8 @@ import time
 import argparse
 import numpy as np
 import MDAnalysis as mda
+import MDAnalysis.transformations
+
 
 #from MDAnalysis.transformations import unwrap
 from multipole import Multipoles
@@ -40,7 +42,7 @@ if __name__ == "__main__":
         #coords may or may not be unwrapped. Apply transformation just to be safe
         if args.verbose: print('Coordinates might not be unwrapped, unwrapping in case.')
         ag = u.atoms
-        unwrap_transform = mda.transformations.unwrap(ag)
+        unwrap_transform = MDAnalysis.transformations.unwrap(ag)
         u.trajectory.add_transformations(unwrap_transform)
 	
 
