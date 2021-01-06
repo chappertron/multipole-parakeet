@@ -230,9 +230,9 @@ class Multipoles(AnalysisBase):
         return (np.array([np.outer(v,v) for v in Hposes[0]-Mpos]) + np.array([np.outer(v,v) for v in Hposes[1]-Mpos])) * qH
 
     def calculate_Q(self,Mpos,Hposes,qH):
-        ''' New version of calculating the charges, rather than iterating over per atom, iterate over per component??? iterate over 9 things rather than 2000'''
-
-        # TODO make this and calculate_dip be static methods -> they don't use any information from the object!!!
+        ''' New version of calculating the charges, rather than iterating over per atom, iterate over per component??? iterate over 9 things rather than 2000
+            TODO add more general implementation for residue/fragment groupings and a water calculation.
+        '''
 
         #return (np.array([np.outer(v,v) for v in Hposes[0]-Mpos]) + np.array([np.outer(v,v) for v in Hposes[1]-Mpos])) * qH
 
@@ -244,7 +244,7 @@ class Multipoles(AnalysisBase):
         v1_sq = v1.reshape([-1, 3, 1]) @ v1.reshape([-1, 1, 3]) # the outer product of the same N*3 array to give a N*3*3 array 
         v2_sq = v2.reshape([-1, 3, 1]) @ v2.reshape([-1, 1, 3]) # the -1 in the first dimension indicates reshaping so that 
 
-        return qH * v1_sq + qH * v2_sq
+        return 0.5*(qH * v1_sq + qH * v2_sq)
 
 if __name__ == "__main__":
 
