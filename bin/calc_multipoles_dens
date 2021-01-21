@@ -22,6 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("-b","--begin",default="0")
     parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
+    parser.add_argument("-c","--coord_centre",default=False,action="store_true",type='if used, binned coordinate is centre of the bin, else it is the left edge')
     
     parser.add_argument("--check_unwrapped",default=False, action="store_true")
     
@@ -67,7 +68,17 @@ if __name__ == "__main__":
     multip = Multipoles(u.atoms,verbose=args.verbose,centre=args.M_name,H_types=args.H_name)
     multip.run()
     if args.verbose: print('Calculation finished')
-    z = np.linspace(multip.ll,multip.ul,multip.nbins)
+
+
+    
+    if args.coord_centre:
+        # bins at centre
+        true_bw = (multip.ul-multip.ll)/multip.nbins
+        z = np.arange(multip.ll+true_bw/2,multip.ul,true_bw) # arange used to ensure the coordinate doesn't go over the box edge
+    else:
+        # bins at left edge
+        z = np.linspace(multip.ll,multip.ul,multip.nbins)
+
     if args.verbose: print('Starting save')
     np.savetxt('profs.dat',np.array([z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]]).T,header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
 
