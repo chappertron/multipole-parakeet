@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("-b","--begin",default="0")
     parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
-    parser.add_argument("-c","--coord_centre",default=False,action="store_true",type='if used, binned coordinate is centre of the bin, else it is the left edge')
+    parser.add_argument("-c","--coord_centre",default=False,action="store_true",help='if used, binned coordinate is centre of the bin, else it is the left edge')
     
     parser.add_argument("--check_unwrapped",default=False, action="store_true")
     
