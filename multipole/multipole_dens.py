@@ -127,11 +127,13 @@ class Multipoles(AnalysisBase):
         # print(mu_hist.dtype)
         # print(self.dipole.dtype)
         
+        charge_hist, left_edges = np.histogram(self.chargedatoms.positions[:,self._axind] % self.dimensions[self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)
+
         self.dipole += mu_hist
         self.quadrapole += Q_hist
-        self.charge_dens += np.histogram(self.chargedatoms.positions[:,self._axind] % self.dimensions[self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)[0]
+        self.charge_dens += charge_hist
 
-
+        self.left_edges = left_edges[:-1] # exclude the right most edge
 
         # self.group = getattr(self._ags[0], self.grouping)
         # self._ags[0].wrap(compound=self.grouping)
