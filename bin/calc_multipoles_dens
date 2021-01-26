@@ -13,7 +13,7 @@ from multipole import Multipoles
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water.. This can be done for just a single frame, or an entire trajectory')
-    parser.add_argument("topfile",help='The topology file name',type=str)
+    parser.add_argument("topfile",help='The topology file name',p=str)
     # optional trajectory argument -t
     parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         z = np.arange(multip.ll+true_bw/2,multip.ul,true_bw) # arange used to ensure the coordinate doesn't go over the box edge
     else:
         # bins at left edge
-        z = np.linspace(multip.ll,multip.ul,multip.nbins)
+        z = np.linspace(multip.ll,multip.ul,multip.nbins,endpoint=False)  # excludes the last point, so that the left edges are considered only
 
     if args.verbose: print('Starting save')
     np.savetxt('profs.dat',np.array([z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]]).T,header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
