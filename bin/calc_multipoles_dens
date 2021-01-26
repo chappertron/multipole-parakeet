@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
     parser.add_argument("-c","--coord_centre",default=False,action="store_true",help='if used, binned coordinate is centre of the bin, else it is the left edge')
-    
+    parser.add_argument("-w","--bin_width",default=0.25,type=float,help='The target width of the bins to use, in Angstrom. Overridden if number of bins is set instead')
     parser.add_argument("--check_unwrapped",default=False, action="store_true")
     
     args = parser.parse_args()
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
 
     #
-    multip = Multipoles(u.atoms,verbose=args.verbose,centre=args.M_name,H_types=args.H_name)
+    multip = Multipoles(u.atoms,verbose=args.verbose,centre=args.M_name,H_types=args.H_name, binsize=args.bin_width)
     multip.run()
     if args.verbose: print('Calculation finished')
 
