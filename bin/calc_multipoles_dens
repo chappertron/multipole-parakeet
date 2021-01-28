@@ -13,7 +13,7 @@ from multipole import Multipoles
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water.. This can be done for just a single frame, or an entire trajectory')
-    parser.add_argument("topfile",help='The topology file name',p=str)
+    parser.add_argument("topfile",help='The topology file name', type=str)
     # optional trajectory argument -t
     parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
