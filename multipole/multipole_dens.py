@@ -9,7 +9,7 @@ class Multipoles(AnalysisBase):
 
     _axis_map = {'x':0,'y':1,'z':2}
 
-    def __init__(self, select, centre = 'M',grouping = 'water', axis = 'z' ,ll = 0,ul = None, binsize=0.25,H_types = ['H'], **kwargs):
+    def __init__(self, select, centre = 'M',grouping = 'water', axis = 'z' ,ll = 0,ul = None, binsize=0.25,H_types = ['H'], type_or_name = None, **kwargs):
         super(Multipoles, self).__init__(select.universe.trajectory,
                                             **kwargs)
         # grab init 
@@ -18,12 +18,19 @@ class Multipoles(AnalysisBase):
         self._universe = select.universe
 
 
-
         self.binsize = binsize
 
         # group of atoms on which to compute the COM (same as used in
         # AtomGroup.wrap())
         
+        # whether to select defined atoms for water (e.g. H/M) using the molecules type or name.
+        # if selected manually, takes priority, else determines if names or types are defined
+        
+        if type_or_name:
+            self.type_or_name = type_or_name
+        else:
+            self.type_or_name = Multipoles.check_types_or_names(self._universe)
+
         # Box sides
         self.centretype = centre # name or type of atom central atom per molecule
         self.grouping = grouping
@@ -93,10 +100,10 @@ class Multipoles(AnalysisBase):
 
         #self.totalmass = np.sum(self.masses)
 
-        self.Matoms = self._universe.select_atoms(f'name {self.centretype}')
-        self.Hatoms = self._universe.select_atoms(f"name {' '.join(self.H_types)}") #joining all the H types with a string
+        self.Matoms = self._universe.select_atoms(f'{self.type_or_name} {self.centretype}')
+        self.Hatoms = self._universe.select_atoms(f"{self.type_or_name} {' '.join(self.H_types)}") #joining all the H types with a string
         #self.Oatoms = self._universe.select_atoms('name O')
-        self.chargedatoms = self._universe.select_atoms(f"name {' '.join(self.H_types)} {self.centretype}")
+        self.chargedatoms = self._universe.select_atoms(f"{self.type_or_name} {' '.join(self.H_types)} {self.centretype}")
 
     def _single_frame(self):
 
@@ -247,6 +254,20 @@ class Multipoles(AnalysisBase):
         v2_sq = v2.reshape([-1, 3, 1]) @ v2.reshape([-1, 1, 3]) # the -1 in the first dimension indicates reshaping so that 
 
         return 0.5*(qH * v1_sq + qH * v2_sq)
+    @staticmethod   
+    def check_types_or_names(universe):
+        try:
+            universe.atoms.names
+            # if no error raised automatically use names 
+            type_or_name = 'name'
+        except mda.NoDataError:
+            try:
+                universe.atoms.types
+                type_or_name = 'type'
+            except mda.NoDataError:
+                raise mda.NoDataError('Universe has neither atom type or name information.')
+        return type_or_name
+
 
 if __name__ == "__main__":
 

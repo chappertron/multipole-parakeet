@@ -10,6 +10,7 @@ import MDAnalysis.transformations
 #from MDAnalysis.transformations import unwrap
 from multipole import Multipoles
 
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water.. This can be done for just a single frame, or an entire trajectory')
@@ -18,14 +19,16 @@ if __name__ == "__main__":
     parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
     parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
-    parser.add_argument("-M","--M_name",default="M")
+    parser.add_argument("--water_model",default="tip4p05",choices=['tip4p05', 'spce'], help="calculate the mutipole moments for the specified water model. Applies some pre-processing such as assigning charges if not already.")
     parser.add_argument("-b","--begin",default="0")
     parser.add_argument("-e","--end",default="-1")
+    parser.add_argument("-M","--M_name",default="M",help='the atom name or type to use for the centre of the molecule for binning and multipole moment calculation. Should use O for tip3p/spc styles and dummy atom for tip4p styles.')
     parser.add_argument("-H","--H_name",default="H",nargs='+',type=str)
-    parser.add_argument("-c","--coord_centre",default=False,action="store_true",help='if used, binned coordinate is centre of the bin, else it is the left edge')
-    parser.add_argument("-w","--bin_width",default=0.25,type=float,help='The target width of the bins to use, in Angstrom. Overridden if number of bins is set instead')
-    parser.add_argument("--check_unwrapped",default=False, action="store_true")
     
+    parser.add_argument("-w","--bin_width",default=0.25,type=float,help='The target width of the bins to use, in Angstrom. Overridden if number of bins is set instead')
+    parser.add_argument("-c","--coord_centre",default=False,action="store_true",help='if used, binned coordinate is centre of the bin, else it is the left edge')
+    parser.add_argument("--check_unwrapped",default=False, action="store_true")
+    parser.add_argument("--types_or_names",default=None,choices=[None,'type','name'],help='Specify whether hydrogen/centre choice is in reference to the atom type or name. By default tries to find names')
     args = parser.parse_args()
     
     if args.verbose: print('Started', time.strftime("%a, %d %b %Y %H:%M:%S"))
@@ -53,16 +56,36 @@ if __name__ == "__main__":
 
     if args.trajfile: u.trajectory[0] #go back to first step # only needed if trajectory is included
 
+    # Check if the system has either atom name or type topology information.
+    if args.types_or_names:
+        types_or_names = args.types_or_names
+    else:
+        types_or_names = Multipoles.check_types_or_names(u)
+    # verify if charges are present or not.
+    try:
+        u.atoms.charges
+        charges_defined = True
+    except mda.NoDataError:
+        charges_defined = False 
+
     # add charges and masses for tip4p/2005
-
-    u.add_TopologyAttr('charge')
-    # u.select_atoms('name O').charges = 0
-    # u.select_atoms('name O').masses = 15.9994
-    u.select_atoms(f"name {' '.join(args.H_name)}").charges = 0.5564 # jointogether the list of hydrogen atom names
-    u.select_atoms(f"name {' '.join(args.H_name)}").masses = 1.008
-    u.select_atoms(f'name {args.M_name}').charges = -1.1128
-    u.select_atoms(f'name {args.M_name}').masses = 0
-
+    if args.water_model == 'tip4p05':
+        if args.verbose: print('Assinging TIP4P/2005 parameters')
+        u.add_TopologyAttr('charge')
+        # u.select_atoms('name O').charges = 0
+        # u.select_atoms('name O').masses = 15.9994
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").charges = 0.5564 # jointogether the list of hydrogen atom names
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").masses = 1.008
+        u.select_atoms(f'{types_or_names} {args.M_name}').charges = -1.1128
+        u.select_atoms(f'{types_or_names} {args.M_name}').masses = 0
+    if args.water_model == 'spce' and not charges_defined:
+        if args.verbose: print('Assinging SPC/E parameters')
+        # if charges are not defined, overide with spce parameters
+        u.add_TopologyAttr('charge')
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").charges = 0.4238 # jointogether the list of hydrogen atom names
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").masses = 1.008
+        u.select_atoms(f'{types_or_names} {args.M_name}').charges = -0.8476
+        u.select_atoms(f'{types_or_names} {args.M_name}').masses = 15.9994
 
     #
     multip = Multipoles(u.atoms,verbose=args.verbose,centre=args.M_name,H_types=args.H_name, binsize=args.bin_width)
