@@ -74,6 +74,9 @@ class Multipoles(AnalysisBase):
         self.quadrapole = np.zeros((3, 3, self.nbins))
         self.dipole = np.zeros((3,self.nbins))
         self.charge_dens = np.zeros(self.nbins)
+        self.cos_theta = np.zeros(self.nbins)
+        self.angular_moment_2 = np.zeros(self.nbins)
+        self.mol_density = np.zeros(self.nbins) # just the oxygen/Mw locations!
 
         # Variables later defined in _prepare() method
         # can be variant
@@ -122,6 +125,10 @@ class Multipoles(AnalysisBase):
         #print(Q.shape)
         mus = self.calculate_dip(rM,[rH1,rH2],qH)
         
+        # calculate the first angle moment by projecting on z axis
+        cos_theta = mus[:,self._axind]/np.linalg.norm(mus,axis=1) #first axis is atoms, second axis are the cartesian compnents
+        cos_moment_2 = 0.5*(3*cos_theta**2-1)
+        
         zM = rM[:,self._axind] # z position 
         zMw = rMw[:,self._axind] 
         #zposes = vstack([zM]*3).T
@@ -129,16 +136,31 @@ class Multipoles(AnalysisBase):
         #print(shape(zposes))
         mu_hist = np.vstack([np.histogram(zMw,bins = self.nbins,weights = mus[:,i],range = self.range)[0] for i in range(3)])
         Q_hist = np.stack([[np.histogram(zMw,bins = self.nbins,weights= Q[:,i,j],range = self.range)[0] for i in range(3)] for j in range(3)])
+
+        mol_hist =  np.histogram(zMw,bins=self.nbins,range=self.range)[0] #un weighted!
+        
+        # NB These are divided by the number of molecules in each bin; i.e., average of cos(theta) per bin
+        angle_hist = np.nan_to_num(np.histogram(zMw,bins=self.nbins,weights=cos_theta,range=self.range)[0]/mol_hist)
+
+        angle_sq_hist =  np.nan_to_num(np.histogram(zMw,bins=self.nbins,weights=cos_moment_2,range=self.range)[0]/mol_hist) #convert nans in profiles to zeros -> assumes that if density is zero then can't have any angles!!!!
         #print(Q_hist.shape)
         
         # print(mu_hist.dtype)
         # print(self.dipole.dtype)
         
         charge_hist, left_edges = np.histogram(self.chargedatoms.positions[:,self._axind] % self.dimensions[self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)
+        
 
+
+        # running sum!
         self.dipole += mu_hist
         self.quadrapole += Q_hist
         self.charge_dens += charge_hist
+        self.mol_density += mol_hist
+
+        self.cos_theta += angle_hist
+        self.angular_moment_2 +=angle_sq_hist
+
 
         self.left_edges = left_edges[:-1] # exclude the right most edge
 
@@ -190,9 +212,12 @@ class Multipoles(AnalysisBase):
         for prop in ['charge_dens','dipole','quadrapole']:
             prop_val = getattr(self,prop)/self.n_frames/self.slice_vol * elementary_charge # divide by the volume and number of frames used and convert to Coloumbs per unit
             setattr(self,prop,prop_val)
-        
-        
-        
+        for prop in ['mol_density']:
+            prop_val = getattr(self,prop)/self.n_frames/self.slice_vol # divide by the volume and number of frames used and
+            setattr(self,prop,prop_val)
+        for prop in ['cos_theta','angular_moment_2']:
+            prop_val = getattr(self,prop)/self.n_frames # divide by the number of frames used. NB. Already divided by the number of molecules per chunk.
+            setattr(self,prop,prop_val)
         
         #     self.results[dim][key] /= self.n_frame 
         #     # Compute standard deviation for the error
@@ -234,6 +259,8 @@ class Multipoles(AnalysisBase):
         # will need to split charges into a list for each H
         # I guess not maybe...
         return ((Hposes[0]-Mpos) + (Hposes[1]-Mpos)) * qH
+
+    
     
     def old_calculate_Q(self,Mpos,Hposes,qH):
         return (np.array([np.outer(v,v) for v in Hposes[0]-Mpos]) + np.array([np.outer(v,v) for v in Hposes[1]-Mpos])) * qH

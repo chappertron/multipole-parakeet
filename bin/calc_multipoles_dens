@@ -103,12 +103,19 @@ if __name__ == "__main__":
         z = np.linspace(multip.ll,multip.ul,multip.nbins,endpoint=False)  # excludes the last point, so that the left edges are considered only
         z = multip.left_edges
     if args.verbose: print('Starting save')
-    np.savetxt('profs.dat',np.array([z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:],multip.quadrapole[0,2,:],multip.quadrapole[1,2,:]]).T,header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz')
+    np.savetxt('profs.dat',np.array([z, multip.charge_dens,multip.dipole[0,:],multip.dipole[1,:], multip.dipole[2,:],multip.quadrapole[0,0,:], multip.quadrapole[1,1,:],multip.quadrapole[2,2,:],multip.quadrapole[0,1,:], 
+                                     multip.quadrapole[0,2,:],multip.quadrapole[1,2,:],multip.mol_density,multip.cos_theta,multip.angular_moment_2]).T,header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz rho_mol cos_theta cos_theta_moment_2')
 
     plt.plot(z,multip.charge_dens,label='rho')
     plt.plot(z, multip.quadrapole[2,2,:],label='P_z')
     plt.plot(z,multip.dipole[2,:],label='Q_ZZ')
     plt.savefig('profs.png')
+    plt.close()
+
+
+    plt.plot(z, multip.cos_theta,label=r'$\langle \cos(\theta)\rangle$')
+    plt.plot(z,multip.angular_moment_2,label=r'$\frac{1}{2}\left 3\langle \cos(\theta)^2\rangle-1\right)')
+    plt.savefig('angles.png')
     plt.close()
 
     if args.verbose: print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
