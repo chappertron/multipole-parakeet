@@ -3,7 +3,7 @@ import MDAnalysis as mda
 from MDAnalysis.analysis.base import AnalysisBase
 from scipy.constants import elementary_charge
 
-
+# import matplotlib.pyplot as plt
 
 class Multipoles(AnalysisBase):
 
@@ -124,9 +124,12 @@ class Multipoles(AnalysisBase):
         Q = self.calculate_Q(rM,[rH1,rH2],qH) # full tensor
         #print(Q.shape)
         mus = self.calculate_dip(rM,[rH1,rH2],qH)
-        
         # calculate the first angle moment by projecting on z axis
         cos_theta = mus[:,self._axind]/np.linalg.norm(mus,axis=1) #first axis is atoms, second axis are the cartesian compnents
+        
+        
+        # if self._universe.trajectory.frame % 1000 == 0: print('cos(theta)',cos_theta[100],mus[100])
+        
         cos_moment_2 = 0.5*(3*cos_theta**2-1)
         
         zM = rM[:,self._axind] # z position 
@@ -141,6 +144,9 @@ class Multipoles(AnalysisBase):
         
         # NB These are divided by the number of molecules in each bin; i.e., average of cos(theta) per bin
         angle_hist = np.nan_to_num(np.histogram(zMw,bins=self.nbins,weights=cos_theta,range=self.range)[0]/mol_hist)
+
+        # r = np.random.randint(0,self.nbins)
+        # if self._universe.trajectory.frame % 1000 == 0: print('cos(theta)',angle_hist[r],np.histogram(zMw,bins=self.nbins,weights=cos_theta,range=self.range)[0][r],mol_hist[r])
 
         angle_sq_hist =  np.nan_to_num(np.histogram(zMw,bins=self.nbins,weights=cos_moment_2,range=self.range)[0]/mol_hist) #convert nans in profiles to zeros -> assumes that if density is zero then can't have any angles!!!!
         #print(Q_hist.shape)
@@ -161,6 +167,9 @@ class Multipoles(AnalysisBase):
         self.cos_theta += angle_hist
         self.angular_moment_2 +=angle_sq_hist
 
+
+        # if self._universe.trajectory.frame % 1000 == 0: print(self.cos_theta/(self._universe.trajectory.frame+1))
+        # if self._universe.trajectory.frame % 1000 == 0: plt.plot(self.cos_theta/(self._universe.trajectory.frame+1)); plt.show()
 
         self.left_edges = left_edges[:-1] # exclude the right most edge
 

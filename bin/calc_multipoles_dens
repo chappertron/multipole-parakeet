@@ -19,7 +19,7 @@ if __name__ == "__main__":
     parser.add_argument("-f","--trajfile", default = None,type=str,metavar='Trajectory')
     parser.add_argument("-v","--verbose", default = False,action="store_true",help='Increase verbosity')
     parser.add_argument("-m","--inmem",default=False,action="store_true",help='Load Trajectory Into memory')
-    parser.add_argument("--water_model",default="tip4p05",choices=['tip4p05', 'spce'], help="calculate the mutipole moments for the specified water model. Applies some pre-processing such as assigning charges if not already.")
+    parser.add_argument("--water_model",default="tip4p05",choices=['tip4p05', 'spce', 'tip3p'], help="calculate the mutipole moments for the specified water model. Applies some pre-processing such as assigning charges if not already.")
     parser.add_argument("-b","--begin",default="0")
     parser.add_argument("-e","--end",default="-1")
     parser.add_argument("-M","--M_name",default="M",help='the atom name or type to use for the centre of the molecule for binning and multipole moment calculation. Should use O for tip3p/spc styles and dummy atom for tip4p styles.')
@@ -85,6 +85,14 @@ if __name__ == "__main__":
         u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").charges = 0.4238 # jointogether the list of hydrogen atom names
         u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").masses = 1.008
         u.select_atoms(f'{types_or_names} {args.M_name}').charges = -0.8476
+        u.select_atoms(f'{types_or_names} {args.M_name}').masses = 15.9994
+    if args.water_model == 'tip3p' and not charges_defined:
+        if args.verbose: print('Assinging TIP3P Charge parameters')
+        # if charges are not defined, overide with spce parameters
+        u.add_TopologyAttr('charge')
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").charges = 0.417 # jointogether the list of hydrogen atom names
+        u.select_atoms(f"{types_or_names} {' '.join(args.H_name)}").masses = 1.008
+        u.select_atoms(f'{types_or_names} {args.M_name}').charges = -0.834
         u.select_atoms(f'{types_or_names} {args.M_name}').masses = 15.9994
 
     #
