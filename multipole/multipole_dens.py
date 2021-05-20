@@ -154,7 +154,7 @@ class Multipoles(AnalysisBase):
         # print(mu_hist.dtype)
         # print(self.dipole.dtype)
         
-        charge_hist, left_edges = np.histogram(self.chargedatoms.positions[:,self._axind] % self.dimensions[self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)
+        charge_hist, left_edges = np.histogram( (self.chargedatoms.positions % self.dimensions)[:,self._axind],bins = self.nbins,weights=self.chargedatoms.charges ,range = self.range)
         
 
 
