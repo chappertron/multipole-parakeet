@@ -304,6 +304,12 @@ class Multipoles(AnalysisBase):
                 raise mda.NoDataError('Universe has neither atom type or name information.')
         return type_or_name
 
+    def pos_M_otf():
+        '''TODO find the vector of dummy atoms on the fly and assign charge to it.'''
+        
+        pass
+
+
 
 if __name__ == "__main__":
 
