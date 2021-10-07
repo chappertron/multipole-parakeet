@@ -68,7 +68,7 @@ class PointChargeModel:
         r1 = rH1-rM
         r2 = rH2 - rM 
 
-        return self.q*(np.outer(r1,r1)+np.outer(r2,r2))
+        return 1/2*self.q*(np.outer(r1,r1)+np.outer(r2,r2)) # Factor of half by the definition in our papers
 
     @property
     def mu_alt(self):
