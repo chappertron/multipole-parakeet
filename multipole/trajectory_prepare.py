@@ -75,18 +75,23 @@ class TrajectoryPreparer:
         pass
 
     def wrap_check(self):
-        if ((self.u.dimensions[:3]-self.u.atoms.positions < 0).any()) or not self.args.check_unwrapped:
+        if not self.args.check_unwrapped:
+            # Skip check for unwrapping
+            if self.args.verbose:
+                print(
+                    'Coordinates not checked if unwrapped. Proceeding to calculation')
+        elif ((self.u.dimensions[:3]-self.u.atoms.positions < 0).any()) or not self.args.check_unwrapped:
          # then coords are definitely already unwrapped, nothing needs to be done
             if self.args.verbose:
                 print(
-                    'Coordinates definitely unwrapped or not checked. Proceeding to calculation')
-            else:
-                # coords may or may not be unwrapped. Apply transformation just to be safe
-                if self.args.verbose:
-                    print('Coordinates might not be unwrapped, unwrapping in case.')
-                ag = self.u.atoms
-                unwrap_transform = MDAnalysis.transformations.unwrap(ag)
-                self.u.trajectory.add_transformations(unwrap_transform)
+                    'Coordinates already unwrapped. Proceeding to calculation')
+        else:
+            # coords may or may not be unwrapped. Apply transformation just to be safe
+            if self.args.verbose:
+                print('Coordinates might not be unwrapped, unwrapping in case.')
+            ag = self.u.atoms
+            unwrap_transform = MDAnalysis.transformations.unwrap(ag)
+            self.u.trajectory.add_transformations(unwrap_transform)
 
     def rewind_traj(self):
         if self.args.trajfile:
