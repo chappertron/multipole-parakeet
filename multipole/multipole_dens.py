@@ -11,6 +11,15 @@ class Multipoles(AnalysisBase):
     _axis_map = {'x': 0, 'y': 1, 'z': 2}
 
     def __init__(self, select, centre='M', grouping='water', axis='z', ll=0, ul=None, binsize=0.25, H_types=['H'], type_or_name=None, **kwargs):
+        '''
+        Prepare the Analysis Class.
+
+        select : 
+
+        centre : Atom label for defining the origin. default: 'M'
+        grouping : default 'water'
+
+        '''
         super(Multipoles, self).__init__(select.universe.trajectory,
                                          **kwargs)
         # grab init
@@ -166,6 +175,8 @@ class Multipoles(AnalysisBase):
 
         charge_hist, left_edges = np.histogram((self.chargedatoms.positions % self.dimensions)[
                                                :, self._axind], bins=self.nbins, weights=self.chargedatoms.charges, range=self.range)
+
+        # TODO Add potential calculations here?
 
         # running sum!
         self.dipole += mu_hist
