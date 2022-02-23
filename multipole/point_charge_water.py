@@ -171,6 +171,9 @@ pc_parameters: Dict[str, PCParams] = {
     ),
     "spce": PCParams.from_dict({"q": 0.4238, "r": 1.0000, "theta": 109.47, "r_M": 0}),
     "tip3p": PCParams.from_dict({"q": 0.417, "r": 0.9572, "theta": 104.52, "r_M": 0}),
+    "opc3": PCParams.from_dict(
+        {"q": 0.447585, "r": 0.97888, "theta": 109.47, "r_M": 0}
+    ),
 }
 
 
