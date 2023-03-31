@@ -177,6 +177,7 @@ if __name__ == "__main__":
 
     # Calculate the Electric Field and Potential
     # TODO: Currently Quick and Dirty Calculations, no corrections for zero field currently present
+    # TODO: remove background field
     # TODO: Calculate contributions of Dipole and Quadrupole
     from scipy.integrate import cumtrapz
     from scipy.constants import elementary_charge, epsilon_0
@@ -185,6 +186,9 @@ if __name__ == "__main__":
     epsilon_0_AA = epsilon_0 * 1e-10  # F/m -> F/AA
     # Efield as single integral of Total Charge Density
     efield = cumtrapz(multip.charge_dens, z, initial=0.0) / epsilon_0_AA
+    # Subtract the Average Field. Total Charge Density should be zero
+    efield -= np.mean(efield)
+    
     # Potential
     # TODO: Implement with Cauchy Repeated Integration? $\int_a^x \int_a^x' f(x')dx' = \int_a^x (x-x') f(x')dx'$
     phi = -cumtrapz(efield, z, initial=0)
