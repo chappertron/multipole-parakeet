@@ -1,59 +1,135 @@
 #!/usr/bin/env python
-import matplotlib.pyplot as plt
-import time
 import argparse
-import numpy as np
-import MDAnalysis as mda
-
-from multipole.point_charge_water import pc_objs
-from multipole.trajectory_prepare import TrajectoryPreparer
-
-
-#from MDAnalysis.transformations import unwrap
-from multipole import Multipoles
 
 
 def set_up_parser():
     parser = argparse.ArgumentParser(
-        description='Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water.. This can be done for just a single frame, or an entire trajectory')
-    parser.add_argument("topfile", help='The topology file name', type=str)
+        description="Calculate the bins of the charge, dipole and quadrapole."
+        "Currently only implemented for water."
+        "This can be done for just a single frame, or an entire trajectory"
+    )
+    parser.add_argument(
+        "topfile", help="The topology file name, .data file, for", type=str
+    )
     # optional trajectory argument -t
-    parser.add_argument("-f", "--trajfile", default=None,
-                        type=str, metavar='Trajectory')
-    parser.add_argument("-v", "--verbose", default=False,
-                        action="store_true", help='Increase verbosity')
-    parser.add_argument("-m", "--inmem", default=False,
-                        action="store_true", help='Load Trajectory Into memory')
-    parser.add_argument("--water_model", default="tip4p05", choices=[
-                        'tip4p05', 'spce', 'tip3p', 'opc'], help="calculate the mutipole moments for the specified water model. Applies some pre-processing such as assigning charges if not already. Future versions will make None default, so non water systems can be used.")
-    parser.add_argument("-b", "--begin", default="0")
-    parser.add_argument("-e", "--end", default="-1")
-    parser.add_argument("-M", "--M_name", default="M",
-                        help='the atom name or type to use for the centre of the molecule for binning and multipole moment calculation. Should use O for tip3p/spc styles and dummy atom for tip4p styles.')
-    parser.add_argument("-H", "--H_name", default="H", nargs='+', type=str)
+    parser.add_argument(
+        "-f", "--trajfile", default=None, type=str, metavar="Trajectory"
+    )
+    parser.add_argument(
+        "-o",
+        "--outfile",
+        default="multipole.dat",
+        type=str,
+        metavar="Output",
+        help="The output file name",
+    )
 
-    parser.add_argument("-w", "--bin_width", default=0.25, type=float,
-                        help='The target width of the bins to use, in Angstrom. Overridden if number of bins is set instead')
-    parser.add_argument("-c", "--coord_centre", default=False, action="store_true",
-                        help='if used, binned coordinate is centre of the bin, else it is the left edge')
-    parser.add_argument("--check_unwrapped",
-                        default=False, action="store_true")
-    parser.add_argument("--types_or_names", default=None, choices=[
-                        None, 'type', 'name'], help='Specify whether hydrogen/centre choice is in reference to the atom type or name. By default tries to find names')
+    parser.add_argument(
+        "-v", "--verbose", default=False, action="store_true", help="Increase verbosity"
+    )
+    parser.add_argument(
+        "-m",
+        "--inmem",
+        default=False,
+        action="store_true",
+        help="Load the enture Trajectory into memory at once. May be faster once loaded, " 
+        "but requires a lot of memory.",
+    )
+    parser.add_argument(
+        "--water_model",
+        default="tip4p05",
+        choices=["tip4p05", "spce", "tip3p", "opc"],
+        help="calculate the mutipole moments for the specified water model."
+        " Applies some pre-processing such as assigning charges if not already."
+        "TODO: Don't assign charges"
+        " Future versions will make None default, so non water systems can be used.",
+    )
+    parser.add_argument(
+        "-b", "--begin", default=0, type=int, help="The first frame to use"
+    )
+    parser.add_argument(
+        "-e",
+        "--end",
+        default=-1,
+        type=int,
+        help="The last frame to use. -1 means the last frame",
+    )
+    parser.add_argument(
+        "-s", "--step", default=1, type=int, help="The step size to use"
+    )
+    parser.add_argument(
+        "-M",
+        "--M_name",
+        default="M",
+        help="the atom name or type to use for the centre of the molecule for binning "
+        "and multipole moment calculation. Should use O for tip3p/spc styles "
+        "and dummy atom for tip4p styles, or Oxygen if calculating dummy atom on the fly.",
+    )
+    parser.add_argument("-H", "--H_name", default="H", nargs="+", type=str)
+    parser.add_argument(
+        "-d",
+        "--calculate_dummy",
+        default=False,
+        action="store_true",
+        help="""Calculate the position of the dummy atom on the fly, from the positions
+                 of the oxygen and hydrogen atoms.""",
+    )
+    parser.add_argument(
+        "-w",
+        "--bin_width",
+        default=0.25,
+        type=float,
+        help="The target width of the bins to use, in Angstrom. Overridden if number "
+        "of bins is set instead",
+    )
+    parser.add_argument(
+        "-c",
+        "--coord_centre",
+        default=False,
+        action="store_true",
+        help="if used, binned coordinate is centre of the bin,"
+        " else it is the left edge",
+    )
+    parser.add_argument(
+        "-u",
+        "--unwrap",
+        default=False,
+        action="store_true",
+        help="Unwrap the coordinates",
+    )
+    parser.add_argument(
+        "--types_or_names",
+        default=None,
+        choices=[None, "type", "name"],
+        help="Specify whether hydrogen/centre choice is in reference to the atom type "
+        "or name. By default tries to work it out from the topology file.",
+    )
 
     return parser
-if __name__ == "__main__":
 
+
+if __name__ == "__main__":
     parser = set_up_parser()
 
     args = parser.parse_args()
 
+    # Only import after parsing arguments, otherwise slow to show -h
+    import numpy as np
+    import MDAnalysis as mda
+    import matplotlib.pyplot as plt
+    import time
+    from multipole.point_charge_water import pc_objs
+    from multipole.trajectory_prepare import TrajectoryPreparer
+
+    # from MDAnalysis.transformations import unwrap
+    from multipole import Multipoles
+
     if args.verbose:
-        print('Started', time.strftime("%a, %d %b %Y %H:%M:%S"))
+        print("Started", time.strftime("%a, %d %b %Y %H:%M:%S"))
 
     traj_prep = TrajectoryPreparer(parser, models=pc_objs)
     # checking if the coords in last step need to be unwrapped:
-    traj_prep.wrap_check()
+    traj_prep.wrap_check()  # TODO Remove, only unwrap arg now passed directly to multipole_dens
     traj_prep.rewind_traj()
     u = traj_prep.u
 
@@ -69,40 +145,113 @@ if __name__ == "__main__":
     except mda.NoDataError:
         charges_defined = False
 
-    multip = Multipoles(u.atoms, verbose=args.verbose, centre=args.M_name,
-                        H_types=args.H_name, binsize=args.bin_width)
-    multip.run()
-    if args.verbose:
-        print('Calculation finished')
+    # Set up the multipoles object
+    multip = Multipoles(
+        u.atoms,
+        verbose=args.verbose,
+        centre=args.M_name,
+        H_types=args.H_name,
+        binsize=args.bin_width,
+        calculate_dummy=args.calculate_dummy,
+        unwrap=args.unwrap,
+    )
 
+    # Run the calculation
+    multip.run(start=args.begin, stop=args.end, step=args.step, verbose=args.verbose)
+    if args.verbose:
+        print("Calculation finished")
+
+    # Set up the bins
     if args.coord_centre:
         # bins at centre
-        true_bw = (multip.ul-multip.ll)/multip.nbins
+        true_bw = (multip.ul - multip.ll) / multip.nbins
         # arange used to ensure the coordinate doesn't go over the box edge
-        z = np.arange(multip.ll+true_bw/2, multip.ul, true_bw)
+        z = np.arange(multip.ll + true_bw / 2, multip.ul, true_bw)
     else:
         # bins at left edge
         # excludes the last point, so that the left edges are considered only
         z = np.linspace(multip.ll, multip.ul, multip.nbins, endpoint=False)
-        z = multip.left_edges
+        # z = multip.left_edges
     if args.verbose:
-        print('Starting save')
-    np.savetxt('profs.dat', np.array([z, multip.charge_dens, multip.dipole[0, :], multip.dipole[1, :], multip.dipole[2, :], multip.quadrapole[0, 0, :], multip.quadrapole[1, 1, :], multip.quadrapole[2, 2, :], multip.quadrapole[0, 1, :],
-                                     multip.quadrapole[0, 2, :], multip.quadrapole[1, 2, :], multip.mol_density, multip.cos_theta, multip.angular_moment_2]).T, header='coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz rho_mol cos_theta cos_theta_moment_2')
+        print("Starting save")
 
-    plt.plot(z, multip.charge_dens, label='rho')
-    plt.plot(z, multip.quadrapole[2, 2, :], label='P_z')
-    plt.plot(z, multip.dipole[2, :], label='Q_ZZ')
-    plt.savefig('profs.png')
+    # Calculate the Electric Field and Potential
+    # TODO: Currently Quick and Dirty Calculations, no corrections for zero field currently present
+    # TODO: Calculate contributions of Dipole and Quadrupole
+    from scipy.integrate import cumtrapz
+    from scipy.constants import elementary_charge, epsilon_0
+
+    # TODO If changing units to e/AA^3, change this by dividing by e
+    epsilon_0_AA = epsilon_0 * 1e-10  # F/m -> F/AA
+    # Efield as single integral of Total Charge Density
+    efield = cumtrapz(multip.charge_dens, z, initial=0.0) / epsilon_0_AA
+    # Potential
+    # TODO: Implement with Cauchy Repeated Integration? $\int_a^x \int_a^x' f(x')dx' = \int_a^x (x-x') f(x')dx'$
+    phi = -cumtrapz(efield, z, initial=0)
+
+    # Save the results
+    np.savetxt(
+        args.outfile,
+        np.array(
+            [
+                z,
+                multip.charge_dens,
+                multip.dipole[0, :],
+                multip.dipole[1, :],
+                multip.dipole[2, :],
+                multip.quadrapole[0, 0, :],
+                multip.quadrapole[1, 1, :],
+                multip.quadrapole[2, 2, :],
+                multip.quadrapole[0, 1, :],
+                multip.quadrapole[0, 2, :],
+                multip.quadrapole[1, 2, :],
+                multip.mol_density,
+                multip.cos_theta,
+                multip.angular_moment_2,
+                multip.qdens_water,
+                multip.qdens_ions,
+                efield,
+                phi,
+            ]
+        ).T,
+        header="coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz "
+        "rho_mol cos_theta cos_theta_moment_2 qdens_water qdens_ions efield phi",
+    )
+
+    # Plot the results
+
+    plt.plot(z, multip.charge_dens, label="rho")
+    plt.plot(
+        z, multip.quadrapole[2, 2, :], label="P_z"
+    )  # TODO plot densities of these components
+    plt.plot(z, multip.dipole[2, :], label="Q_ZZ")
+    plt.xlabel("$z$ / Angstrom")
+    plt.ylabel("Charge density / e/Angstrom$^3$")
+    plt.savefig("profs.png")
     plt.close()
 
-    plt.plot(z, multip.cos_theta, label=r'$\langle \cos(\theta)\rangle$')
-    plt.plot(z, multip.angular_moment_2,
-             label=r'$\frac{1}{2}\left 3\langle \cos(\theta)^2\rangle-1\right)')
-    plt.savefig('angles.png')
+    fig, (ax_E, ax_phi) = plt.subplots(2, sharex=True)
+
+    ax_E.plot(z, efield, "k.-", label="Electric Field")
+    ax_E.set(ylabel="$E/\mathrm{V/\AA}$")
+
+    ax_phi.plot(z, phi, "k.-")
+    ax_phi.set(xlabel="$z/\mathrm{\AA}$", ylabel="$\phi/\mathrm{V}$")
+    ax_phi.axhline(0, color="grey", linestyle="--")
+
+    plt.savefig("potential_and_field_plots.png")
+    plt.show()
+
+    plt.plot(z, multip.cos_theta, label=r"$\langle \cos(\theta)\rangle$")
+    plt.plot(
+        z,
+        multip.angular_moment_2,
+        label=r"$\frac{1}{2}\left 3\langle \cos(\theta)^2\rangle-1\right)",
+    )
+    plt.savefig("angles.png")
     plt.close()
 
     if args.verbose:
-        print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
+        print("Finished", time.strftime("%a, %d %b %Y %H:%M:%S"))
 
-    #print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
+    # print('Finished', time.strftime("%a, %d %b %Y %H:%M:%S"))
