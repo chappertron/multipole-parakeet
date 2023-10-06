@@ -7,7 +7,7 @@ from scipy.constants import elementary_charge
 from .point_charge_water import PCParams, pc_parameters
 from numpy.typing import NDArray
 from numba import jit
-from numba import double,float32 
+from numba import double, float32
 
 # using fast histogram
 from fast_histogram import histogram1d
@@ -187,6 +187,7 @@ class Multipoles(AnalysisBase):
         self.ions: mda.AtomGroup = self._universe.select_atoms(
             f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
         )
+
     # @profile
     def _single_frame(self):
         """
@@ -241,9 +242,7 @@ class Multipoles(AnalysisBase):
         # Calculate the histograms, with positions on the dummy atom, weighted by the property being binned
         mu_hist = np.vstack(
             [
-                histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)[
-                    0
-                ]
+                histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)
                 for i in range(3)
             ]
         )
@@ -252,7 +251,10 @@ class Multipoles(AnalysisBase):
             [
                 [
                     histogram1d(
-                        zMw, bins=self.nbins, range = self.range,weights=quad[:, i, j], 
+                        zMw,
+                        bins=self.nbins,
+                        range=self.range,
+                        weights=quad[:, i, j],
                     )
                     for i in range(3)
                 ]
@@ -285,7 +287,10 @@ class Multipoles(AnalysisBase):
 
         # convert nans in profiles to zeros -> assumes that if density is zero then
         # can't have any angles!!!!
-        angle_sq_hist = np.nan_to_num(histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)/mol_hist)
+        angle_sq_hist = np.nan_to_num(
+            histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)
+            / mol_hist
+        )
         # print(Q_hist.shape)
 
         # print(mu_hist.dtype)
@@ -541,7 +546,9 @@ def get_dummy_position_no_numba(
     dxM = dxM / la.norm(dxM, axis=1)[:, None]
     return xO + dM * dxM
 
+
 # import the types
+
 
 # @jit((float32[:,:],float32[:,:],float32[:,:],double),nopython=True) # type annotations allow for precompilation
 @jit(nopython=True)
@@ -582,7 +589,7 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
 
 # @jit(nopython=True)
 # TODO These type annotations don't seem to work when called
-@jit((float32[:,:],float32[:,:],float32[:,:],float32[:]),nopython=True)
+@jit((float32[:, :], float32[:, :], float32[:, :], float32[:]), nopython=True)
 def unwrap_water_coords(rO, rH1, rH2, box):
     """
     Iterate over atoms then over dimensions, check if bond is longer than half box length
