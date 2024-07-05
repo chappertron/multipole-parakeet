@@ -29,8 +29,9 @@ Installing with previous instructions will add the script `calc_multipoles_dens`
 ## Running 
 The command line utility `calc_multipole_dens` has only one mandatory option, a topology file. This however will only give you the charge densities for the frame represented by that topology with the default settings. It is very important to change the settings for your needs.
 
+TODO: Update this to use correct args
 The help message for `calc_multipole_dens` is as follows:
-```
+```bash
 usage: calc_multipoles_dens [-h] [-f Trajectory] [-v] [-m] [--water_model {tip4p05,spce,tip3p,opc}]
                             [-b BEGIN] [-e END] [-M M_NAME] [-H H_NAME [H_NAME ...]] [-w BIN_WIDTH]
                             [-c] [--check_unwrapped] [--types_or_names {None,type,name}]
@@ -83,9 +84,29 @@ To calculate the the electostatic field and potentials, and dipolar and quadrupo
 
 ## Limitations
 - Currently these scripts work with only a few water models.
-- If your water model uses dummy atoms, but the trajectories do not include the positions of the dummy atoms (such as the case with the output from LAMMPS), you must add these back in. This script does not yet do this whilst reading the trajectory, however you can generate a trajectory that re-adds the atoms using our [dummify](https://github.com/chappertron/dummify) package.
-- The location of the origin for calculating the dipole and quadrupole of each molecule must be on the negatively charged atom (real or dummy). The choice in orign has no effect on the dipole moments, but can affect the quadrupole contribution.
-- Electrostatic fields/potentials must be calculated from the average density profiles in post processing, no support for calculating for each frame.
-- No sub-averaging for estimating errors in one trajectory is performed. Use independant repeats.
+- ~~If your water model uses dummy atoms, but the trajectories do not include the positions of the dummy atoms (such as the case with the output from LAMMPS), you must add these back in. This script does not yet do this whilst reading the trajectory, however you can generate a trajectory that re-adds the atoms using our [dummify](https://github.com/chappertron/dummify) package. ~~
+- The location of the origin for calculating the dipole and quadrupole of each molecule must be on the negatively charged atom (real or dummy). The choice in orign has no effect on the dipole moments, but can affect the quadrupole contribution. For water the location of the negative charge is a good choice.
+- Electrostatic fields/potentials must be calculated from the average density profiles in post processing, no support for calculating for each frame yet.
+- No sub-averaging for estimating errors in one trajectory is performed. Use independant repeats and average and calculate the standard error of the potential profiles from these repeats.
+- Binning is only avalible in 1D currently.
+- Charges that change in time are unsupported.
 
+## Changes From 0.0.1 to 0.1
+- Can calculate the position of the dummy atoms on the fly using the `-d` option.
+- Performs unwrapping of water molecules on the fly (needed for multipole and dummy calculation). Specify with `-u`.
+- Supports the presence of charges not due to water molecules. Binned in the total charge and independently. 
+<!-- - Charge densities are now in $e\ \mathrm{\AA^{-3}}$ instead of $\mathrm{C\ \AA^{-3}}$. -->
+- Now requires [`numba`]() for fast calculations of the quadrupole, dipole moments, box unwrapping and dummy atom position.
+  - Due to JIT compilation, This may be slower for short trajectories/single frames. In the future this may be optional.
+- Now requires [`fast_histogram`]() for fast calculation of the charge binning. This was chosen because the `numba` implementation of `np.histogram` does not support weights, which are essential for binning.
 
+## Warning about DCD Trajectories
+If using `MDAnalysis` version `2.4.X` for `X` < 3,  there is a bug when reading DCD large trajectories that causes crashing. This is fixed in newer versions, so make sure to use the latest version or use `2.3` or earlier. 
+
+### TODO
+
+- [x] Unwrap trajectories using oxygen hydrogen distance, or MD ANAlysis residues.
+- [ ] Add the option to only calculate the charge profiles.
+- [ ] Add calculations  of the potential and field at the end of the simulation.
+- [ ] Update the README.md for the command line arguments.
+- [ ] Calculate charge densities in e/AA^3. Add option for old behaviour.
