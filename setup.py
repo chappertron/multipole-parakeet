@@ -17,5 +17,4 @@ setup(
         "numba",
         "fast_histogram",
     ],
-    
 )

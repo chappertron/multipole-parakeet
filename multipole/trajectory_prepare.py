@@ -17,7 +17,7 @@ class TrajectoryPreparer:
     def __init__(
         self,
         args_parser: argparse.ArgumentParser,
-        models: Union[Dict[str,PointChargeModel], None] = None,
+        models: Union[Dict[str, PointChargeModel], None] = None,
     ):
         args = args_parser.parse_args()
         self.args = args
@@ -51,13 +51,13 @@ class TrajectoryPreparer:
         self.M_name = self.args.M_name
 
     def set_water_model(self):
-        """Override some of the MDA Charges with those of the water model verifies that 
+        """Override some of the MDA Charges with those of the water model verifies that
         the charges are the correct ones...
         I'm not sure why the requirement for this came about...
-        I think the out put of tip4p/2005 dummy wasn't giving the correct charges or the 
+        I think the out put of tip4p/2005 dummy wasn't giving the correct charges or the
         topology file types were not saving charges properly
         """
-        
+
         try:
             # If charges are already present, don't overwrite charges
             self.u.atoms.charges
@@ -65,7 +65,7 @@ class TrajectoryPreparer:
         except mda.NoDataError:
             # If No charges defined, overwrite with water model charges
             pass
-        
+
         if self.args.verbose:
             print(f"Overwriting with {self.args.water_model} charges:")
             print(f"q_H = {self.model.q} e")
@@ -85,7 +85,7 @@ class TrajectoryPreparer:
         # set mass of M atoms to 15.9994 if actually Oxygen or 0.0 if dummy
         if self.model.r_M == 0.0:
             # For three point models, set mass of negative charge to oxygen mass
-            M_mass = 15.9994  
+            M_mass = 15.9994
         else:
             M_mass = 0.0
         self.u.select_atoms(f"{self.types_or_names} {self.args.M_name}").masses = M_mass
@@ -93,9 +93,9 @@ class TrajectoryPreparer:
         pass
 
     def wrap_check(self):
-        '''
-        TODO: Just unwrap or not, rather than checking 
-        '''
+        """
+        TODO: Just unwrap or not, rather than checking
+        """
         if not self.args.unwrap:
             # Skip check for unwrapping
             if self.args.verbose:

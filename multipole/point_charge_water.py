@@ -7,7 +7,7 @@ from scipy.constants import elementary_charge, speed_of_light
 class PointChargeModel:
     e_AA_in_debye = speed_of_light * elementary_charge * 1e11  # 1/0.2081943
 
-    def __init__(self, q:float, r:float, theta:float, r_M:float=0.0):
+    def __init__(self, q: float, r: float, theta: float, r_M: float = 0.0):
         self.theta_rad = theta * np.pi / 180
 
         self.r = r
@@ -146,10 +146,10 @@ class PCParams:
 
     @staticmethod
     def from_dict(pdict: Dict[str, float]):
-        '''
-            Create a PCParams object from a dictionary
-            TODO: Add type hint. Could not get working with dataclass
-        '''
+        """
+        Create a PCParams object from a dictionary
+        TODO: Add type hint. Could not get working with dataclass
+        """
         try:
             return PCParams(
                 q=pdict["q"], r=pdict["r"], theta=pdict["theta"], r_M=pdict["r_M"]
