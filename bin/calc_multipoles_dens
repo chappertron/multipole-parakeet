@@ -40,7 +40,7 @@ def set_up_parser():
         default="tip4p05",
         choices=["tip4p05", "spce", "tip3p", "opc"],
         help="calculate the mutipole moments for the specified water model."
-        " Applies some pre-processing such as assigning charges if not already."
+        " Applies some pre-processing such as assigning charges if not already. "
         "TODO: Don't assign charges"
         " Future versions will make None default, so non water systems can be used.",
     )
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     #     types_or_names = Multipoles.check_types_or_names(u)
     # verify if charges are present or not.
     try:
-        u.atoms.charges
+        u.atoms.charges # type: ignore - Because no type annotations `pyright` thinks this is `None`
         charges_defined = True
     except mda.NoDataError:
         charges_defined = False
@@ -177,10 +177,9 @@ if __name__ == "__main__":
 
     # Calculate the Electric Field and Potential
     # TODO: Currently Quick and Dirty Calculations, no corrections for zero field currently present
-    # TODO: remove background field
     # TODO: Calculate contributions of Dipole and Quadrupole
     from scipy.integrate import cumtrapz
-    from scipy.constants import elementary_charge, epsilon_0
+    from scipy.constants import epsilon_0
 
     # TODO If changing units to e/AA^3, change this by dividing by e
     epsilon_0_AA = epsilon_0 * 1e-10  # F/m -> F/AA
@@ -190,7 +189,7 @@ if __name__ == "__main__":
     efield -= np.mean(efield)
     
     # Potential
-    # TODO: Implement with Cauchy Repeated Integration? $\int_a^x \int_a^x' f(x')dx' = \int_a^x (x-x') f(x')dx'$
+    # TODO: Implement with Cauchy Repeated Integration. $\int_a^x \int_a^x' f(x')dx' = \int_a^x (x-x') f(x')dx'$
     phi = -cumtrapz(efield, z, initial=0)
 
     # Save the results
@@ -227,7 +226,7 @@ if __name__ == "__main__":
     plt.plot(z, multip.charge_dens, label="rho")
     plt.plot(
         z, multip.quadrapole[2, 2, :], label="P_z"
-    )  # TODO plot densities of these components
+        )  # TODO: plot densities of these components
     plt.plot(z, multip.dipole[2, :], label="Q_ZZ")
     plt.xlabel("$z$ / Angstrom")
     plt.ylabel("Charge density / e/Angstrom$^3$")
@@ -237,10 +236,10 @@ if __name__ == "__main__":
     fig, (ax_E, ax_phi) = plt.subplots(2, sharex=True)
 
     ax_E.plot(z, efield, "k.-", label="Electric Field")
-    ax_E.set(ylabel="$E/\mathrm{V/\AA}$")
+    ax_E.set(ylabel=r"$E/\mathrm{V/\AA}$")
 
     ax_phi.plot(z, phi, "k.-")
-    ax_phi.set(xlabel="$z/\mathrm{\AA}$", ylabel="$\phi/\mathrm{V}$")
+    ax_phi.set(xlabel=r"$z/\mathrm{\AA}$", ylabel=r"$\phi/\mathrm{V}$")
     ax_phi.axhline(0, color="grey", linestyle="--")
 
     plt.savefig("potential_and_field_plots.png")
