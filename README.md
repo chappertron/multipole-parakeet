@@ -29,48 +29,65 @@ Installing with previous instructions will add the script `calc_multipoles_dens`
 ## Running 
 The command line utility `calc_multipole_dens` has only one mandatory option, a topology file. This however will only give you the charge densities for the frame represented by that topology with the default settings. It is very important to change the settings for your needs.
 
-TODO: Update this to use correct args
 The help message for `calc_multipole_dens` is as follows:
 ```bash
-usage: calc_multipoles_dens [-h] [-f Trajectory] [-v] [-m] [--water_model {tip4p05,spce,tip3p,opc}]
-                            [-b BEGIN] [-e END] [-M M_NAME] [-H H_NAME [H_NAME ...]] [-w BIN_WIDTH]
-                            [-c] [--check_unwrapped] [--types_or_names {None,type,name}]
+usage: calc_multipoles_dens [-h] [-f Trajectory] [-o Output] [-v] [-m]
+                            [--water_model {tip4p05,spce,tip3p,opc}]
+                            [-b BEGIN] [-e END] [-s STEP] [-M M_NAME]
+                            [-H H_NAME [H_NAME ...]] [-d] [-w BIN_WIDTH] [-c]
+                            [-u] [--types_or_names {None,type,name}]
                             topfile
 
-Calculate the bins of the charge, dipole and quadrapole. Currently only implemented for water..
-This can be done for just a single frame, or an entire trajectory
+Calculate the bins of the charge, dipole and quadrapole.Currently only
+implemented for water.This can be done for just a single frame, or an entire
+trajectory
 
 positional arguments:
-  topfile               The topology file name
+  topfile               The topology file name, .data file, for
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
   -f Trajectory, --trajfile Trajectory
+  -o Output, --outfile Output
+                        The output file name
   -v, --verbose         Increase verbosity
-  -m, --inmem           Load Trajectory Into memory
+  -m, --inmem           Load the enture Trajectory into memory at once. May be
+                        faster once loaded, but requires a lot of memory.
   --water_model {tip4p05,spce,tip3p,opc}
-                        calculate the mutipole moments for the specified water model. Applies some
-                        pre-processing such as assigning charges if not already. Future versions
-                        will make None default, so non water systems can be used.
+                        calculate the mutipole moments for the specified water
+                        model. Applies some pre-processing such as assigning
+                        charges if not already.TODO: Don't assign charges
+                        Future versions will make None default, so non water
+                        systems can be used.
   -b BEGIN, --begin BEGIN
-  -e END, --end END
+                        The first frame to use
+  -e END, --end END     The last frame to use. -1 means the last frame
+  -s STEP, --step STEP  The step size to use
   -M M_NAME, --M_name M_NAME
-                        the atom name or type to use for the centre of the molecule for binning and
-                        multipole moment calculation. Should use O for tip3p/spc styles and dummy
-                        atom for tip4p styles.
+                        the atom name or type to use for the centre of the
+                        molecule for binning and multipole moment calculation.
+                        Should use O for tip3p/spc styles and dummy atom for
+                        tip4p styles, or Oxygen if calculating dummy atom on
+                        the fly.
   -H H_NAME [H_NAME ...], --H_name H_NAME [H_NAME ...]
+  -d, --calculate_dummy
+                        Calculate the position of the dummy atom on the fly,
+                        from the positions of the oxygen and hydrogen atoms.
   -w BIN_WIDTH, --bin_width BIN_WIDTH
-                        The target width of the bins to use, in Angstrom. Overridden if number of
-                        bins is set instead
-  -c, --coord_centre    if used, binned coordinate is centre of the bin, else it is the left edge
-  --check_unwrapped
+                        The target width of the bins to use, in Angstrom.
+                        Overridden if number of bins is set instead
+  -c, --coord_centre    if used, binned coordinate is centre of the bin, else
+                        it is the left edge
+  -u, --unwrap          Unwrap the coordinates
   --types_or_names {None,type,name}
-                        Specify whether hydrogen/centre choice is in reference to the atom type or
-                        name. By default tries to find names
+                        Specify whether hydrogen/centre choice is in reference
+                        to the atom type or name. By default tries to work it
+                        out from the topology file.
 ```
 
 The option `-f` is where you specify the trajectory file you wish to use. 
-It is important that you set the water model to match that of the system you are using, with the `--water_model` option. Currently only the TIP4P/2005, SPC/E, TIP3P and OPC models work.
+It is important that you set the water model to match that of the system you are using, with the `--water_model` option. 
+Currently only the TIP4P/2005, SPC/E, TIP3P and OPC models work.
 
 You need to set `-M` and `-H` to the name or type of the negatively charged atom (oxygen or the dummy atom) and the hydrogen atoms, respectively. Whether name or type is used depends on the `--types_or_names` option.
 
