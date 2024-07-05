@@ -2,19 +2,15 @@ from typing import Dict, Union
 import numpy as np
 import numpy.linalg as la
 import MDAnalysis as mda
-from MDAnalysis.analysis.base import AnalysisBase
+from MDAnalysis.analysis.base import AnalysisBase, Results
 from scipy.constants import elementary_charge
 from .point_charge_water import PCParams, pc_parameters
 from numpy.typing import NDArray
 from numba import jit
-from numba import double, float32
+from numba import float32
 
 # using fast histogram
 from fast_histogram import histogram1d
-
-# import matplotlib.pyplot as plt
-
-# profiling code
 
 
 class Multipoles(AnalysisBase):
@@ -45,7 +41,7 @@ class Multipoles(AnalysisBase):
                 location
         grouping : default 'water'
 
-        TODO! Add contributions to charge from other parts of the system
+        TODO: ! Add contributions to charge from other parts of the system
             - Find a way to select atoms that aren't in the water molecule
               independently
 
@@ -61,7 +57,6 @@ class Multipoles(AnalysisBase):
         # allows use of run(parallel=True)
         self._ags = [select]
         self._universe: mda.Universe = select.universe
-
         # Set options
 
         self.calculate_dummy = calculate_dummy
@@ -99,6 +94,9 @@ class Multipoles(AnalysisBase):
 
         if self.grouping == "water":
             self.H_types = H_types
+        else:
+            # TODO: Add `molecular` grouping based on molecule ids
+            raise ValueError("Non-water groupings not currently supported")
 
         # currently only supports orthogonal boxes
         # get the index for the axis used here
@@ -136,7 +134,7 @@ class Multipoles(AnalysisBase):
 
         # Initialize results array with zeros/
         # these are all profiles
-        # TODO Make these dicts of x y z
+        # TODO: Make these dicts of x y z
         self.quadrapole = np.zeros((3, 3, self.nbins))
         self.dipole = np.zeros((3, self.nbins))
         self.charge_dens = np.zeros(self.nbins)
@@ -154,35 +152,17 @@ class Multipoles(AnalysisBase):
         self.totalmass = None
 
     def _prepare(self):
-        # group must be a local variable, otherwise there will be
-        # issues with parallelization
-        # group = getattr(self._ags[0], self.grouping)
-
-        # Get masses and charges for the selection
-        # try:  # in case it's not an atom
-        #     self.masses = np.array([elem.total_mass() for elem in group])
-        #     self.charges = np.array([elem.total_charge() for elem in group])
-        # except AttributeError:  # much much faster for atoms
-        #     self.masses = self._ags[0].masses
-        #     self.charges = self._ags[0].charges
-
-        # for now just doing water generalise later
-
-        # self.totalmass = np.sum(self.masses)
+        # TODO: for now just doing water generalise later
 
         self.Matoms: mda.AtomGroup = self._universe.select_atoms(
             f"{self.type_or_name} {self.centretype}"
         )
         self.Hatoms: mda.AtomGroup = self._universe.select_atoms(
             f"{self.type_or_name} {' '.join(self.H_types)}"
-        )  # joining all the H types with a string
-        # self.Oatoms = self._universe.select_atoms('name O')
-        # OLD CODE: SELECTED WATER CHARGED ATOMS
-        # self.chargedatoms = self._universe.select_atoms(
-        #     f"{self.type_or_name} {' '.join(self.H_types)} {self.centretype}"
-        # )
-        # TODO Select charged atoms that are not Water atoms
-        self.chargedatoms: mda.AtomGroup = self._universe.atoms
+        )
+
+        self.charged_atoms: mda.AtomGroup = self._universe.atoms # pyright: ignore
+
         # Select atoms that are not hydrogen or oxygen
         self.ions: mda.AtomGroup = self._universe.select_atoms(
             f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
@@ -191,12 +171,9 @@ class Multipoles(AnalysisBase):
     # @profile
     def _single_frame(self):
         """
-        Operations performed on a single frame to calculate the binning of the charge
+        Operations performed on a single frame to calculate the binning of the charge and dipole
         densities
         """
-        # if self._universe.trajectory.frame % 1000 == 0:
-        #     print(self._universe.trajectory.frame)
-        # print(self._universe.trajectory.frame)
         # TODO access this information before the frame?
         qH: NDArray = self.Hatoms.charges[0]
 
@@ -227,7 +204,7 @@ class Multipoles(AnalysisBase):
 
         # calculate the first angle moment by projecting on z axis
         # first axis is atoms, second axis are the cartesian components
-        # TODO deal with warning that occurs on first frame
+        # TODO: deal with warning that occurs on first frame
         cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
 
         # if self._universe.trajectory.frame % 1000 == 0:
@@ -267,23 +244,13 @@ class Multipoles(AnalysisBase):
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
         # un weighted!
 
-        # NB These are divided by the number of molecules in each bin; i.e., average of
+        # NOTE: These are divided by the number of molecules in each bin; i.e., average of
         # cos(theta) per bin
         angle_hist = np.nan_to_num(
             histogram1d(zMw, bins=self.nbins, weights=cos_theta, range=self.range)
             / mol_hist
         )  # divided by the number of molecules
 
-        # r = np.random.randint(0, self.nbins)
-        # if self._universe.trajectory.frame % 1000 == 0:
-        #     print(
-        #         "cos(theta)",
-        #         angle_hist[r],
-        #       np.histogram(zMw, bins=self.nbins, weights=cos_theta, range=self.range)[
-        #             0
-        #         ][r],
-        #         mol_hist[r],
-        #     )
 
         # convert nans in profiles to zeros -> assumes that if density is zero then
         # can't have any angles!!!!
@@ -291,15 +258,12 @@ class Multipoles(AnalysisBase):
             histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)
             / mol_hist
         )
-        # print(Q_hist.shape)
 
-        # print(mu_hist.dtype)
-        # print(self.dipole.dtype)
-        # TODO Change to use the moved positions of the oxygen charges!
+        # TODO: Change to use the moved positions of the oxygen charges!
         charge_hist = histogram1d(
-            (self.chargedatoms.positions % self.dimensions)[:, self._axind],
+            (self.charged_atoms.positions % self.dimensions)[:, self._axind],
             bins=self.nbins,
-            weights=self.chargedatoms.charges,
+            weights=self.charged_atoms.charges,
             range=self.range,
         )
 
@@ -312,6 +276,7 @@ class Multipoles(AnalysisBase):
         )
         # positions of water atoms
         water_positions = np.concatenate([rM, rH1, rH2])
+
         # Charges of water atoms
         water_charges = np.concatenate([self.Matoms.charges, self.Hatoms.charges])
         assert water_positions.shape[0] == water_charges.shape[0]
@@ -322,7 +287,6 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
-        # TODO Add potential calculations here?
 
         # running sum!
         self.dipole += mu_hist
@@ -335,55 +299,19 @@ class Multipoles(AnalysisBase):
         self.cos_theta += angle_hist
         self.angular_moment_2 += angle_sq_hist
 
-        # if self._universe.trajectory.frame % 1000 == 0:
-        #   print(self.cos_theta/(self._universe.trajectory.frame+1))
-        # if self._universe.trajectory.frame % 1000 == 0:
-        #   plt.plot(self.cos_theta/(self._universe.trajectory.frame+1)); plt.show()
-
-        # self.left_edges = left_edges[:-1]  # exclude the right most edge
-
-        # self.group = getattr(self._ags[0], self.grouping)
-        # self._ags[0].wrap(compound=self.grouping)
-
-        # # Find position of atom/group of atoms
-        # if self.grouping == 'atoms':
-        #     positions = self._ags[0].positions  # faster for atoms
-        # else:
-        #     # COM for res/frag/etc
-        #     positions = np.array([elem.centroid() for elem in self.group])
-
-        # for dim in ['x', 'y', 'z']:
-        #     idx = self.results[dim]['dim']
-
-        #     key = 'pos'
-        #     key_std = 'pos_std'
-        #     # histogram for positions weighted on masses
-        #     hist, _ = np.histogram(positions[:, idx],
-        #                            weights=self.masses,
-        #                            bins=self.nbins,
-        #                            range=(0.0, max(self.dimensions)))
-
-        #     self.results[dim][key] += hist
-        #     self.results[dim][key_std] += np.square(hist)
-
-        # key = 'char'
-        # key_std = 'char_std'
-        # # histogram for positions weighted on charges
-        # hist, _ = np.histogram(positions[:, idx],
-        #                        weights=self.charges,
-        #                        bins=self.nbins,
-        #                        range=(0.0, max(self.dimensions)))
-
-        # self.results[dim][key] += hist
-        # self.results[dim][key_std] += np.square(hist)
 
     def _conclude(self):
         # k = 6.022e-1  # divide by avodagro and convert from A3 to cm3
-        """Units are AA
+        """
+        Units are AA
         mu - eAA/AA^3 -> C/AA^2
         Q - eAA^2/AA^3 -> C/AA
         rho_q - e/AA^3 -> C/AA^3
         TODO: Add option to keep in e/AA^N
+
+        NOTE: 
+        Results are saved by normalising cumulative sums of the properties.
+        Also now returns a `results` attribute.
         """
 
         # Average results over the  number of configurations
@@ -410,57 +338,45 @@ class Multipoles(AnalysisBase):
             prop_val = getattr(self, prop) / self.n_frames
             setattr(self, prop, prop_val)
 
-        #     self.results[dim][key] /= self.n_frame
-        #     # Compute standard deviation for the error
-        #     self.results[dim]['pos_std'] = np.sqrt(self.results[dim][
-        #         'pos_std'] - np.square(self.results[dim]['pos']))
-        #     self.results[dim]['char_std'] = np.sqrt(self.results[dim][
-        #         'char_std'] - np.square(self.results[dim]['char']))
+        # Put all fields into a results dict
 
-        # for dim in ['x', 'y', 'z']:
-        #     self.results[dim]['pos'] /= self.results[dim]['slice volume'] * k
-        #     self.results[dim]['char'] /= self.results[dim]['slice volume'] * k
-        #     self.results[dim]['pos_std'] /= self.results[dim]['slice volume'] * k
-        #     self.results[dim]['char_std'] /= self.results[dim]['slice volume'] * k
-
-    def _add_other_results(self, other):
-        # TODO doesn;t currently work, need to implement a results dict???
-        # For parallel analysis
-        self.results = {self.charge_dens, self.dipole, self.quadrapole}
-        results = self.results
-        for dim in ["x", "y", "z"]:
-            key = "pos"
-            key_std = "pos_std"
-            results[dim][key] += other[dim][key]
-            results[dim][key_std] += other[dim][key_std]
-
-            key = "char"
-            key_std = "char_std"
-            results[dim][key] += other[dim][key]
-            results[dim][key_std] += other[dim][key_std]
+        # TODO: Should this be using clones, so re-running doesn't overwrite these references?
+        self.results = Results(
+            charge_dens=self.charge_dens,
+            dipole=self.dipole,
+            quadrupole=self.quadrapole,
+            qdens_ions=self.qdens_ions,
+            qdens_water=self.qdens_water,
+            mol_density=self.mol_density,
+            cos_theta=self.cos_theta,
+            angular_moment_2=self.angular_moment_2,
+        )
 
 
 # Library Functions
 def calculate_dip(Mpos, Hposes, qH):
-    # TODO let qH be a vector for each H, for use with reaxff
+    '''
+    Old version of calculating dipole moment that doesn't use Numba
+    '''
+    # TODO: let qH be a vector for each H, for use with reaxff
     # will need to split charges into a list for each H
     # I guess not maybe...
     # TODO: Allow a different origin for dipole moment calculation
+
     return ((Hposes[0] - Mpos) + (Hposes[1] - Mpos)) * qH
 
 
-# @staticmethod
 def check_types_or_names(universe: mda.Universe) -> str:
     """
-    Determine whether the mda Universe is using names or types for the atom types
+    Determine whether the `mda.Universe` is using names or types for the atom types
     """
     try:
-        universe.atoms.names
+        universe.atoms.names  # pyright: ignore
         # if no error raised automatically use names
         type_or_name = "name"
     except mda.NoDataError:
         try:
-            universe.atoms.types
+            universe.atoms.types  # pyright: ignore
             type_or_name = "type"
         except mda.NoDataError:
             raise mda.NoDataError("Universe has neither atom type or name information.")
@@ -468,18 +384,11 @@ def check_types_or_names(universe: mda.Universe) -> str:
 
 
 def calculate_Q_no_numba(Mpos, H1, H2, qH):
-    """New version of calculating the charges, rather than iterating over per atom,
-    iterate over per component??? iterate over 9 things rather than 2000
-    TODO add more general implementation for residue/fragment groupings
-    and a water calculation.
+    """Calculating the quadrupoles. Rather than iterating over per atom,
+    iterates over per component. Iterate over 9 things rather than 2000
     """
 
-    # return (
-    #     np.array([np.outer(v, v) for v in Hposes[0] - Mpos])
-    #     + np.array([np.outer(v, v) for v in Hposes[1] - Mpos])
-    # ) * qH
-
-    # transpose so each component can be looked at individually
+    # TODO: add more general implementation for residue/fragment groupings and a water calculation.
 
     v1 = H1 - Mpos
     v2 = H2 - Mpos
@@ -492,7 +401,6 @@ def calculate_Q_no_numba(Mpos, H1, H2, qH):
     return 0.5 * (qH * v1_sq + qH * v2_sq)
 
 
-# @jit((float32[:,:],float32[:,:],float32[:,:],double),nopython=True)
 @jit(nopython=True)
 def calculate_Q(Mpos, H1, H2, qH):
     """New version of calculating the charges, rather than iterating over per atom,
@@ -505,18 +413,9 @@ def calculate_Q(Mpos, H1, H2, qH):
 
     """
 
-    # return (
-    #     np.array([np.outer(v, v) for v in Hposes[0] - Mpos])
-    #     + np.array([np.outer(v, v) for v in Hposes[1] - Mpos])
-    # ) * qH
-
-    # transpose so each component can be looked at individually
-
     v1 = H1 - Mpos
     v2 = H2 - Mpos
 
-    # the outer product of the same N*3 array to give a N*3*3 array
-    # the -1 in the first dimension indicates reshaping so that
     result = np.zeros((len(v1), 3, 3))
 
     for i in range(len(v1)):
@@ -537,7 +436,7 @@ def get_dummy_position_no_numba(
     """
     dx1 = xH1 - xO
     dx2 = xH2 - xO
-    # TODO, faster to pass in bond length manually? Not useful for the case of flexible
+    # TODO: faster to pass in bond length manually? Not useful for the case of flexible
     # water models
     dxM = dx1 + dx2
 
@@ -547,10 +446,6 @@ def get_dummy_position_no_numba(
     return xO + dM * dxM
 
 
-# import the types
-
-
-# @jit((float32[:,:],float32[:,:],float32[:,:],double),nopython=True) # type annotations allow for precompilation
 @jit(nopython=True)
 def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> NDArray:
     """
@@ -560,7 +455,7 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
     """
     dx1 = xH1 - xO
     dx2 = xH2 - xO
-    # TODO, faster to pass in bond length manually? Not useful for the case of flexible
+    # TODO: faster to pass in bond length manually? Not useful for the case of flexible
     # water models
     dxM = dx1 + dx2
 
@@ -575,20 +470,7 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
     return xO + dM * dxM
 
 
-# TODO have a no numba version
-# def unwrap_water_coords(rO, rH1, rH2, box):
-#     # check if the bond is longer than half box length
-#     # save check in vector an apply unwrapping based on this
-#     unwrap_me = rH1 - rO > box / 2
-#     rH1_new = rH1 - box * unwrap_me
-
-#     unwrap_me = rH2 - rO > box / 2
-#     rH2_new = rH2 - box * unwrap_me
-#     return rO, rH1_new, rH2_new
-
-
-# @jit(nopython=True)
-# TODO These type annotations don't seem to work when called
+# TODO: These type annotations don't seem to work when called
 @jit((float32[:, :], float32[:, :], float32[:, :], float32[:]), nopython=True)
 def unwrap_water_coords(rO, rH1, rH2, box):
     """
@@ -608,29 +490,14 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import time
 
-    # from trajectory_prepare import TrajectoryPreparer
 
     print("Started", time.strftime("%a, %d %b %Y %H:%M:%S"))
 
-    # u = mda.Universe("../300K/rep3/addedMs.gro", "../300K/rep3/addedMs.dcd")
     u = mda.Universe(
         "../test_data_files/tip4p05_LV_400K.data",
     )
 
-    # add charges and masses for tip4p/2005
-
-    # u.add_TopologyAttr("charge")
-    # u.select_atoms("name O").charges = 0
-    # u.select_atoms("name O").masses = 15.9994
-    # u.select_atoms("name H").charges = 0.5564
-    # u.select_atoms("name H").masses = 1.008
-    # u.select_atoms("name M").charges = -1.1128
-    # u.select_atoms("name M").masses = 0
-
-    # TrajectoryPreparer(u,)
-
-    #
-    multip = Multipoles(u.atoms, verbose=True, H_types=1, centre=1)
+    multip = Multipoles(u.atoms, verbose=True, H_types=1, centre=1) # pyright: ignore
     multip.run()
     z = np.linspace(multip.ll, multip.ul, multip.nbins)
 
