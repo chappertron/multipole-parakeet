@@ -144,3 +144,31 @@ mda
 np
 multipole/__pycache__/__init__.cpython-38.pyc
 multipole/__pycache__/multipole_dens.cpython-38.pyc
+
+# My stuff
+# _profiling
+# not automated tests, so gitignore for now
+testing/ 
+# TODO: Readd if automated testing is added.
+test_data_files/ 
+
+
+# Performace profiling results
+*.lprof
+profiling/
+
+# Mac Crud
+.DS_Store
+
+# Results from running commands in root
+angles.png
+profs.png
+profs.dat
+profiled.dat
+ion_dens_test.txt
+
+# Testing files
+scratch.py
+scratch.ipynb
+
+.vscode

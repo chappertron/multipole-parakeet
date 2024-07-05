@@ -37,8 +37,8 @@ class Multipoles(AnalysisBase):
 
         select : Trajectory Selection
 
-        centre : Atom label for defining the origin. default: 'M' the dummy/oxygen atom
-                location
+        centre : Atom label for defining the origin. default: 'M' the dummy/oxygen
+                 atom location
         grouping : default 'water'
 
         TODO: ! Add contributions to charge from other parts of the system
@@ -46,8 +46,8 @@ class Multipoles(AnalysisBase):
               independently
 
         Options
-            model_params - Name of water model params (see point_charge_water.pc_params)
-                            or set of parameters
+            model_params - Name of water model params
+                           (see point_charge_water.pc_params) or set of parameters
 
         """
         # Use the AnalysisBase Init Function. Set everything up
@@ -161,18 +161,17 @@ class Multipoles(AnalysisBase):
             f"{self.type_or_name} {' '.join(self.H_types)}"
         )
 
-        self.charged_atoms: mda.AtomGroup = self._universe.atoms # pyright: ignore
+        self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
 
         # Select atoms that are not hydrogen or oxygen
         self.ions: mda.AtomGroup = self._universe.select_atoms(
             f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
         )
 
-    # @profile
     def _single_frame(self):
         """
-        Operations performed on a single frame to calculate the binning of the charge and dipole
-        densities
+        Operations performed on a single frame to calculate the binning of the charge
+        and dipole densities
         """
         # TODO access this information before the frame?
         qH: NDArray = self.Hatoms.charges[0]
@@ -216,7 +215,8 @@ class Multipoles(AnalysisBase):
         zMw = rMw[:, self._axind]
         # zposes = vstack([zM]*3).T
 
-        # Calculate the histograms, with positions on the dummy atom, weighted by the property being binned
+        # Calculate the histograms, with positions on the dummy atom,
+        # weighted by the property being binned
         mu_hist = np.vstack(
             [
                 histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)
@@ -244,13 +244,12 @@ class Multipoles(AnalysisBase):
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
         # un weighted!
 
-        # NOTE: These are divided by the number of molecules in each bin; i.e., average of
-        # cos(theta) per bin
+        # NOTE: These are divided by the number of molecules in each bin;
+        # i.e., average of  cos(theta) per bin
         angle_hist = np.nan_to_num(
             histogram1d(zMw, bins=self.nbins, weights=cos_theta, range=self.range)
             / mol_hist
         )  # divided by the number of molecules
-
 
         # convert nans in profiles to zeros -> assumes that if density is zero then
         # can't have any angles!!!!
@@ -287,7 +286,6 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
-
         # running sum!
         self.dipole += mu_hist
         self.quadrapole += Q_hist
@@ -299,7 +297,6 @@ class Multipoles(AnalysisBase):
         self.cos_theta += angle_hist
         self.angular_moment_2 += angle_sq_hist
 
-
     def _conclude(self):
         # k = 6.022e-1  # divide by avodagro and convert from A3 to cm3
         """
@@ -309,7 +306,7 @@ class Multipoles(AnalysisBase):
         rho_q - e/AA^3 -> C/AA^3
         TODO: Add option to keep in e/AA^N
 
-        NOTE: 
+        NOTE:
         Results are saved by normalising cumulative sums of the properties.
         Also now returns a `results` attribute.
         """
@@ -340,7 +337,7 @@ class Multipoles(AnalysisBase):
 
         # Put all fields into a results dict
 
-        # TODO: Should this be using clones, so re-running doesn't overwrite these references?
+        # TODO: Should this clone, so re-run doesn't overwrite these refs?
         self.results = Results(
             charge_dens=self.charge_dens,
             dipole=self.dipole,
@@ -355,9 +352,9 @@ class Multipoles(AnalysisBase):
 
 # Library Functions
 def calculate_dip(Mpos, Hposes, qH):
-    '''
+    """
     Old version of calculating dipole moment that doesn't use Numba
-    '''
+    """
     # TODO: let qH be a vector for each H, for use with reaxff
     # will need to split charges into a list for each H
     # I guess not maybe...
@@ -388,7 +385,8 @@ def calculate_Q_no_numba(Mpos, H1, H2, qH):
     iterates over per component. Iterate over 9 things rather than 2000
     """
 
-    # TODO: add more general implementation for residue/fragment groupings and a water calculation.
+    # TODO: add more general implementation for residue/fragment groupings
+    # and a water calculation.
 
     v1 = H1 - Mpos
     v2 = H2 - Mpos
@@ -474,8 +472,8 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
 @jit((float32[:, :], float32[:, :], float32[:, :], float32[:]), nopython=True)
 def unwrap_water_coords(rO, rH1, rH2, box):
     """
-    Iterate over atoms then over dimensions, check if bond is longer than half box length
-    and apply unwrapping if necessary
+    Iterate over atoms then over dimensions, check if bond is longer
+    than half box length and apply unwrapping if necessary
     """
     for i in range(rO.shape[0]):
         for j in range(3):
@@ -490,14 +488,13 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import time
 
-
     print("Started", time.strftime("%a, %d %b %Y %H:%M:%S"))
 
     u = mda.Universe(
         "../test_data_files/tip4p05_LV_400K.data",
     )
 
-    multip = Multipoles(u.atoms, verbose=True, H_types=1, centre=1) # pyright: ignore
+    multip = Multipoles(u.atoms, verbose=True, H_types=1, centre=1)  # pyright: ignore
     multip.run()
     z = np.linspace(multip.ll, multip.ul, multip.nbins)
 
