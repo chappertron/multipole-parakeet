@@ -178,7 +178,7 @@ if __name__ == "__main__":
     # Calculate the Electric Field and Potential
     # TODO: Currently Quick and Dirty Calculations, no corrections for zero field currently present
     # TODO: Calculate contributions of Dipole and Quadrupole
-    from scipy.integrate import cumtrapz
+    from scipy.integrate import cumulative_trapezoid as cumtrapz
     from scipy.constants import epsilon_0
 
     # TODO If changing units to e/AA^3, change this by dividing by e
