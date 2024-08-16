@@ -38,7 +38,7 @@ class TrajectoryPreparer:
 
         self.set_up_args()
 
-        if self.model is not None:
+        if self.model is not None and self.args.grouping == "water":
             self.set_water_model()
 
     def set_up_args(self):

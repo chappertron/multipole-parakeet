@@ -27,12 +27,21 @@ def set_up_parser():
     parser.add_argument(
         "-v", "--verbose", default=False, action="store_true", help="Increase verbosity"
     )
+
+    parser.add_argument(
+        "-g",
+        "--grouping",
+        default="water",
+        type=str,
+        choices=["water", "residue"],
+        help="Specify how to determine molecules. If water, uses the M type and H type arguments to find the atoms and assumes molecules have contiguous ids. If 'residue' the molecules are found with the residue/molecule ids and the COM is used as the origin for the dipole calculation. ",
+    )
     parser.add_argument(
         "-m",
         "--inmem",
         default=False,
         action="store_true",
-        help="Load the enture Trajectory into memory at once. May be faster once loaded, " 
+        help="Load the enture Trajectory into memory at once. May be faster once loaded, "
         "but requires a lot of memory.",
     )
     parser.add_argument(
@@ -140,7 +149,7 @@ if __name__ == "__main__":
     #     types_or_names = Multipoles.check_types_or_names(u)
     # verify if charges are present or not.
     try:
-        u.atoms.charges # type: ignore - Because no type annotations `pyright` thinks this is `None`
+        u.atoms.charges  # type: ignore - Because no type annotations `pyright` thinks this is `None`
         charges_defined = True
     except mda.NoDataError:
         charges_defined = False
@@ -154,6 +163,7 @@ if __name__ == "__main__":
         binsize=args.bin_width,
         calculate_dummy=args.calculate_dummy,
         unwrap=args.unwrap,
+        grouping=args.grouping,
     )
 
     # Run the calculation
@@ -187,7 +197,7 @@ if __name__ == "__main__":
     efield = cumtrapz(multip.charge_dens, z, initial=0.0) / epsilon_0_AA
     # Subtract the Average Field. Total Charge Density should be zero
     efield -= np.mean(efield)
-    
+
     # Potential
     # TODO: Implement with Cauchy Repeated Integration. $\int_a^x \int_a^x' f(x')dx' = \int_a^x (x-x') f(x')dx'$
     phi = -cumtrapz(efield, z, initial=0)
@@ -226,7 +236,7 @@ if __name__ == "__main__":
     plt.plot(z, multip.charge_dens, label="rho")
     plt.plot(
         z, multip.quadrapole[2, 2, :], label="P_z"
-        )  # TODO: plot densities of these components
+    )  # TODO: plot densities of these components
     plt.plot(z, multip.dipole[2, :], label="Q_ZZ")
     plt.xlabel("$z$ / Angstrom")
     plt.ylabel("Charge density / e/Angstrom$^3$")

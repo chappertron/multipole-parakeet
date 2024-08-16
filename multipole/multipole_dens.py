@@ -8,6 +8,8 @@ from .point_charge_water import PCParams, pc_parameters
 from numpy.typing import NDArray
 from numba import jit
 from numba import float32
+import warnings
+from icecream import ic
 
 # using fast histogram
 from fast_histogram import histogram1d
@@ -39,7 +41,7 @@ class Multipoles(AnalysisBase):
 
         centre : Atom label for defining the origin. default: 'M' the dummy/oxygen
                  atom location
-        grouping : default 'water'
+        grouping "water" or "residue": default 'water'
 
         TODO: ! Add contributions to charge from other parts of the system
             - Find a way to select atoms that aren't in the water molecule
@@ -94,9 +96,11 @@ class Multipoles(AnalysisBase):
 
         if self.grouping == "water":
             self.H_types = H_types
+        elif self.grouping == "residue":
+            self.H_types = []  # No hydrogen types needed.
         else:
             # TODO: Add `molecular` grouping based on molecule ids
-            raise ValueError("Non-water groupings not currently supported")
+            raise ValueError("Only grouping='water' or 'residue' are supported.")
 
         # currently only supports orthogonal boxes
         # get the index for the axis used here
@@ -154,24 +158,158 @@ class Multipoles(AnalysisBase):
     def _prepare(self):
         # TODO: for now just doing water generalise later
 
-        self.Matoms: mda.AtomGroup = self._universe.select_atoms(
-            f"{self.type_or_name} {self.centretype}"
-        )
-        self.Hatoms: mda.AtomGroup = self._universe.select_atoms(
-            f"{self.type_or_name} {' '.join(self.H_types)}"
-        )
+        if self.grouping == "water":
+            self.Matoms: mda.AtomGroup = self._universe.select_atoms(
+                f"{self.type_or_name} {self.centretype}"
+            )
+            self.Hatoms: mda.AtomGroup = self._universe.select_atoms(
+                f"{self.type_or_name} {' '.join(self.H_types)}"
+            )
 
-        self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
+            self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
 
-        # Select atoms that are not hydrogen or oxygen
-        self.ions: mda.AtomGroup = self._universe.select_atoms(
-            f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
-        )
+            # Select atoms that are not hydrogen or oxygen
+            self.ions: mda.AtomGroup = self._universe.select_atoms(
+                f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
+            )
+        else:
+            self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
+            self.ions: mda.AtomGroup = self._universe.atoms
 
     def _single_frame(self):
         """
         Operations performed on a single frame to calculate the binning of the charge
         and dipole densities
+        """
+        if self.grouping == "water":
+            self._single_frame_water()
+        elif self.grouping == "residue":
+            self._single_frame_residue()
+        else:
+            raise ValueError(
+                "Invalid Grouping: valid options are 'water' and 'residue' "
+            )
+
+    def _single_frame_residue(self):
+        """
+        Operations performed on a single frame to calculate the binning of the charge
+        and dipole densities
+
+        Version for grouping = "residue"
+        """
+
+        # TODO: Deal with the horrendous amount of duplication found here.
+
+        residues = self._universe.residues
+
+        rM = com_residues(residues)
+
+        if self.unwrap:
+            # TODO:
+            warnings.warn("Unwrap is not currently applied for residues")
+
+        # Dipoles per residue
+        mus = calculate_dip_residues(residues, rM)
+
+        # TODO: Implement quadrupole calculations
+        quad = np.zeros((residues.n_residues, 3, 3))
+
+        # wrapping coords. Needed for the calculation of the
+        rMw = (
+            rM % self.dimensions
+        )  # mod of the positions with respect to the box dimensions
+
+        # calculate the first angle moment by projecting on z axis
+        # first axis is atoms, second axis are the cartesian components
+        # TODO: deal with warning that occurs on first frame
+        cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
+
+        # if self._universe.trajectory.frame % 1000 == 0:
+        # print('cos(theta)',cos_theta[100],mus[100])
+
+        cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
+
+        # z position
+        zMw = rMw[:, self._axind]
+        # zposes = vstack([zM]*3).T
+
+        # Calculate the histograms, with positions on the dummy atom,
+        # weighted by the property being binned
+        mu_hist = np.vstack(
+            [
+                histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)
+                for i in range(3)
+            ]
+        )
+
+        Q_hist = np.stack(
+            [
+                [
+                    histogram1d(
+                        zMw,
+                        bins=self.nbins,
+                        range=self.range,
+                        weights=quad[:, i, j],
+                    )
+                    for i in range(3)
+                ]
+                for j in range(3)
+            ]
+        )
+
+        # assert (np.abs(Q_hist_fast-Q_hist) < 1e-17).all()
+
+        mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
+        # un weighted!
+
+        # NOTE: These are divided by the number of molecules in each bin;
+        # i.e., average of  cos(theta) per bin
+        angle_hist = np.nan_to_num(
+            histogram1d(zMw, bins=self.nbins, weights=cos_theta, range=self.range)
+            / mol_hist
+        )  # divided by the number of molecules
+
+        # convert nans in profiles to zeros -> assumes that if density is zero then
+        # can't have any angles!!!!
+        angle_sq_hist = np.nan_to_num(
+            histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)
+            / mol_hist
+        )
+
+        # TODO: Change to use the moved positions of the oxygen charges!
+        charge_hist = histogram1d(
+            (self.charged_atoms.positions % self.dimensions)[:, self._axind],
+            bins=self.nbins,
+            weights=self.charged_atoms.charges,
+            range=self.range,
+        )
+
+        # Calculate charge hist for ions and water separately
+        charge_ion_hist = histogram1d(
+            (self.ions.positions % self.dimensions)[:, self._axind],
+            bins=self.nbins,
+            weights=self.ions.charges,
+            range=self.range,
+        )
+
+        # running sum!
+        self.dipole += mu_hist
+        # TODO: Rather than actually binning, just add zero
+        self.quadrapole += Q_hist
+        self.charge_dens += charge_hist
+        self.qdens_ions += charge_ion_hist
+        self.qdens_water += np.zeros(self.nbins)
+        self.mol_density += mol_hist
+
+        self.cos_theta += angle_hist
+        self.angular_moment_2 += angle_sq_hist
+
+    def _single_frame_water(self):
+        """
+        Operations performed on a single frame to calculate the binning of the charge
+        and dipole densities
+
+        Version for grouping = "water"
         """
         # TODO access this information before the frame?
         qH: NDArray = self.Hatoms.charges[0]
@@ -351,6 +489,25 @@ class Multipoles(AnalysisBase):
 
 
 # Library Functions
+
+
+def com(ag: mda.AtomGroup) -> NDArray:
+    return (ag.positions * ag.masses[:, np.newaxis]).sum(axis=0) / ag.masses.sum()
+
+
+def com_residues(residues: mda.ResidueGroup) -> NDArray:
+    """
+    Calculate the Centre of Mass for each residue in the system.
+    """
+    output = np.zeros((residues.n_residues, 3))
+
+    # TODO: Find a way to avoid this likely slow iteration over residues.
+    for i, res in enumerate(residues):
+        output[i] = com(res.atoms)
+
+    return output
+
+
 def calculate_dip(Mpos, Hposes, qH):
     """
     Old version of calculating dipole moment that doesn't use Numba
@@ -361,6 +518,37 @@ def calculate_dip(Mpos, Hposes, qH):
     # TODO: Allow a different origin for dipole moment calculation
 
     return ((Hposes[0] - Mpos) + (Hposes[1] - Mpos)) * qH
+
+
+def calculate_dip_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
+    """
+    Calculate the dipole moment of each residue (molecule) in the system.
+    """
+
+    output = np.zeros((residues.n_residues, 3))
+
+    # TODO: Find a way to avoid this likely slow iteration over residues.
+    for i, (com, res) in enumerate(zip(origins, residues)):
+        output[i] = calculate_dip_ag(res.atoms.positions, res.atoms.charges, com)
+
+    return output
+
+
+def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
+    """
+    Calculate the dipole moment of an atom group, relative to an origin
+
+    Arguments
+    ---------
+    positions:
+        A (N,3) numpy array of atom positions
+    charges:
+        A (N,) numpy array of atomic charges
+    origin:
+        The origin used for the dipole calculation. Should have shape (3,)
+    """
+
+    return (charges[:, np.newaxis] * (positions - origin)).sum(axis=0)
 
 
 def check_types_or_names(universe: mda.Universe) -> str:
