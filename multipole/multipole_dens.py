@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from numba import jit
 from numba import float32
 import warnings
-from icecream import ic
 
 # using fast histogram
 from fast_histogram import histogram1d
