@@ -16,5 +16,6 @@ setup(
         "numpy",
         "numba",
         "fast_histogram",
+        "scipy",
     ],
 )
