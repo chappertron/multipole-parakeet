@@ -1,17 +1,34 @@
+from dataclasses import dataclass
+from .point_charge_water import PCParams, pc_parameters
+
 from typing import Dict, List, Optional, Union
+import warnings
+
 import numpy as np
 import numpy.linalg as la
+from numpy.typing import NDArray
 import MDAnalysis as mda
 from MDAnalysis.analysis.base import AnalysisBase, Results
 from scipy.constants import elementary_charge
-from .point_charge_water import PCParams, pc_parameters
-from numpy.typing import NDArray
 from numba import jit
 from numba import float32
-import warnings
-
-# using fast histogram
 from fast_histogram import histogram1d
+
+# Structs for Results
+
+
+@dataclass
+class FrameResult:
+    """Histogram results per frame"""
+
+    charge_dens: NDArray
+    dipole: NDArray
+    quadrupole: NDArray
+    qdens_ions: NDArray
+    qdens_water: NDArray
+    mol_density: NDArray
+    cos_theta: NDArray
+    angular_moment_2: NDArray
 
 
 class Multipoles(AnalysisBase):
@@ -161,16 +178,18 @@ class Multipoles(AnalysisBase):
 
         # Initialize results array with zeros/
         # these are all profiles
-        # TODO: Make these dicts of x y z
-        self.quadrapole = np.zeros((3, 3, self.nbins))
-        self.dipole = np.zeros((3, self.nbins))
-        self.charge_dens = np.zeros(self.nbins)
-        self.cos_theta = np.zeros(self.nbins)
-        self.angular_moment_2 = np.zeros(self.nbins)
-        # just the oxygen/Mw locations!
-        self.mol_density = np.zeros(self.nbins)
-        self.qdens_water = np.zeros(self.nbins)
-        self.qdens_ions = np.zeros(self.nbins)
+        # TODO: Make these dicts of x y z to support all three dimensions.
+        self._results_tally = FrameResult(
+            quadrupole=np.zeros((3, 3, self.nbins)),
+            dipole=np.zeros((3, self.nbins)),
+            charge_dens=np.zeros(self.nbins),
+            cos_theta=np.zeros(self.nbins),
+            angular_moment_2=np.zeros(self.nbins),
+            # just the oxygen/Mw locations!
+            mol_density=np.zeros(self.nbins),
+            qdens_water=np.zeros(self.nbins),
+            qdens_ions=np.zeros(self.nbins),
+        )
 
         # Variables later defined in _prepare() method
         # can be variant
@@ -280,8 +299,6 @@ class Multipoles(AnalysisBase):
             ]
         )
 
-        # assert (np.abs(Q_hist_fast-Q_hist) < 1e-17).all()
-
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
         # un weighted!
 
@@ -315,17 +332,18 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
-        # running sum!
-        self.dipole += mu_hist
-        # TODO: Rather than actually binning, just add zero
-        self.quadrapole += Q_hist
-        self.charge_dens += charge_hist
-        self.qdens_ions += charge_ion_hist
-        self.qdens_water += np.zeros(self.nbins)
-        self.mol_density += mol_hist
+        results = FrameResult(
+            dipole=mu_hist,
+            quadrupole=Q_hist,
+            charge_dens=charge_hist,
+            qdens_ions=charge_ion_hist,
+            qdens_water=np.zeros(self.nbins),
+            mol_density=mol_hist,
+            cos_theta=angle_hist,
+            angular_moment_2=angle_sq_hist,
+        )
 
-        self.cos_theta += angle_hist
-        self.angular_moment_2 += angle_sq_hist
+        self._tally_results(results)
 
     def _single_frame_water(self):
         """
@@ -447,21 +465,25 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
-        # running sum!
-        self.dipole += mu_hist
-        self.quadrapole += Q_hist
-        self.charge_dens += charge_hist
-        self.qdens_ions += charge_ion_hist
-        self.qdens_water += charge_water_hist
-        self.mol_density += mol_hist
+        results = FrameResult(
+            dipole=mu_hist,
+            quadrupole=Q_hist,
+            charge_dens=charge_hist,
+            qdens_ions=charge_ion_hist,
+            qdens_water=charge_water_hist,
+            mol_density=mol_hist,
+            cos_theta=angle_hist,
+            angular_moment_2=angle_sq_hist,
+        )
 
-        self.cos_theta += angle_hist
-        self.angular_moment_2 += angle_sq_hist
+        self._tally_results(results)
 
     def _conclude(self):
         # k = 6.022e-1  # divide by avodagro and convert from A3 to cm3
         """
-        Units are AA
+        Distance units are AA
+        Charge units are C
+
         mu - eAA/AA^3 -> C/AA^2
         Q - eAA^2/AA^3 -> C/AA
         rho_q - e/AA^3 -> C/AA^3
@@ -473,42 +495,45 @@ class Multipoles(AnalysisBase):
         """
 
         # Average results over the  number of configurations
-        for prop in [
-            "charge_dens",
-            "dipole",
-            "quadrapole",
-            "qdens_ions",
-            "qdens_water",
-        ]:
-            # divide by the volume and number of frames used and convert to
-            #  Coloumbs per unit
-            prop_val = (
-                getattr(self, prop) / self.n_frames / self.slice_vol * elementary_charge
-            )
-            setattr(self, prop, prop_val)
-        for prop in ["mol_density"]:
-            # divide by the volume and number of frames used and
-            prop_val = getattr(self, prop) / self.n_frames / self.slice_vol
-            setattr(self, prop, prop_val)
-        for prop in ["cos_theta", "angular_moment_2"]:
-            # divide by the number of frames used. NB. Already divided by the number of
-            # molecules per chunk.
-            prop_val = getattr(self, prop) / self.n_frames
-            setattr(self, prop, prop_val)
+
+        n_frames = self.n_frames
+        vol = self.slice_vol
+        e = elementary_charge
 
         # Put all fields into a results dict
+        tally = self._results_tally
 
         # TODO: Should this clone, so re-run doesn't overwrite these refs?
         self.results = Results(
-            charge_dens=self.charge_dens,
-            dipole=self.dipole,
-            quadrupole=self.quadrapole,
-            qdens_ions=self.qdens_ions,
-            qdens_water=self.qdens_water,
-            mol_density=self.mol_density,
-            cos_theta=self.cos_theta,
-            angular_moment_2=self.angular_moment_2,
+            # divide by the volume and number of frames used and convert to
+            #  Coloumbs per unit
+            charge_dens=tally.charge_dens / n_frames / vol * e,
+            dipole=tally.dipole / n_frames / vol * e,
+            quadrupole=tally.quadrupole / n_frames / vol * e,
+            qdens_ions=tally.qdens_ions / n_frames / vol * e,
+            qdens_water=tally.qdens_water / n_frames / vol * e,
+            # divide by the volume and number of frames used and
+            mol_density=tally.mol_density / n_frames / vol,
+            # divide by the number of frames used. NB. Already divided by the number of
+            # molecules per chunk.
+            cos_theta=tally.cos_theta / n_frames,
+            angular_moment_2=tally.angular_moment_2 / n_frames,
         )
+
+    ## Helper methods
+    def _tally_results(self, result: FrameResult):
+        # running sum!
+        self._results_tally.dipole += result.dipole
+        self._results_tally.quadrupole += result.quadrupole
+
+        self._results_tally.charge_dens += result.charge_dens
+        self._results_tally.qdens_ions += result.qdens_ions
+        self._results_tally.qdens_water += result.qdens_water
+
+        self._results_tally.mol_density += result.mol_density
+
+        self._results_tally.cos_theta += result.cos_theta
+        self._results_tally.angular_moment_2 += result.angular_moment_2
 
 
 # Library Functions
@@ -713,23 +738,23 @@ if __name__ == "__main__":
         "profs.dat",
         [
             z,
-            multip.charge_dens,
-            multip.dipole[0, :],
-            multip.dipole[1, :],
-            multip.dipole[2, :],
-            multip.quadrapole[0, 0, :],
-            multip.quadrapole[1, 1, :],
-            multip.quadrapole[2, 2, :],
-            multip.quadrapole[0, 1, :],
-            multip.quadrapole[0, 2, :],
-            multip.quadrapole[1, 2, :],
+            multip.results.charge_dens,
+            multip.results.dipole[0, :],
+            multip.results.dipole[1, :],
+            multip.results.dipole[2, :],
+            multip.results.quadrupole[0, 0, :],
+            multip.results.quadrupole[1, 1, :],
+            multip.results.quadrupole[2, 2, :],
+            multip.results.quadrupole[0, 1, :],
+            multip.results.quadrupole[0, 2, :],
+            multip.results.quadrupole[1, 2, :],
         ],
         header="coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz",
     )
 
-    plt.plot(z, multip.charge_dens, label="rho")
-    plt.plot(z, multip.quadrapole[2, 2, :], label="$Q_zz$")
-    plt.plot(z, multip.dipole[2, :], label="$P_z$")
+    plt.plot(z, multip.results.charge_dens, label="rho")
+    plt.plot(z, multip.results.quadrupole[2, 2, :], label="$Q_zz$")
+    plt.plot(z, multip.results.dipole[2, :], label="$P_z$")
     plt.savefig("profs.png")
     plt.show()
 

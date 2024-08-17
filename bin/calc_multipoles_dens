@@ -4,7 +4,7 @@ import argparse
 
 def set_up_parser():
     parser = argparse.ArgumentParser(
-        description="Calculate the bins of the charge, dipole and quadrapole."
+        description="Calculate the bins of the charge, dipole and quadrupole."
         "Currently only implemented for water."
         "This can be done for just a single frame, or an entire trajectory"
     )
@@ -130,7 +130,6 @@ if __name__ == "__main__":
     from multipole.point_charge_water import pc_objs
     from multipole.trajectory_prepare import TrajectoryPreparer
 
-    # from MDAnalysis.transformations import unwrap
     from multipole import Multipoles
 
     if args.verbose:
@@ -194,7 +193,7 @@ if __name__ == "__main__":
     # TODO If changing units to e/AA^3, change this by dividing by e
     epsilon_0_AA = epsilon_0 * 1e-10  # F/m -> F/AA
     # Efield as single integral of Total Charge Density
-    efield = cumtrapz(multip.charge_dens, z, initial=0.0) / epsilon_0_AA
+    efield = cumtrapz(multip.results.charge_dens, z, initial=0.0) / epsilon_0_AA
     # Subtract the Average Field. Total Charge Density should be zero
     efield -= np.mean(efield)
 
@@ -208,21 +207,21 @@ if __name__ == "__main__":
         np.array(
             [
                 z,
-                multip.charge_dens,
-                multip.dipole[0, :],
-                multip.dipole[1, :],
-                multip.dipole[2, :],
-                multip.quadrapole[0, 0, :],
-                multip.quadrapole[1, 1, :],
-                multip.quadrapole[2, 2, :],
-                multip.quadrapole[0, 1, :],
-                multip.quadrapole[0, 2, :],
-                multip.quadrapole[1, 2, :],
-                multip.mol_density,
-                multip.cos_theta,
-                multip.angular_moment_2,
-                multip.qdens_water,
-                multip.qdens_ions,
+                multip.results.charge_dens,
+                multip.results.dipole[0, :],
+                multip.results.dipole[1, :],
+                multip.results.dipole[2, :],
+                multip.results.quadrupole[0, 0, :],
+                multip.results.quadrupole[1, 1, :],
+                multip.results.quadrupole[2, 2, :],
+                multip.results.quadrupole[0, 1, :],
+                multip.results.quadrupole[0, 2, :],
+                multip.results.quadrupole[1, 2, :],
+                multip.results.mol_density,
+                multip.results.cos_theta,
+                multip.results.angular_moment_2,
+                multip.results.qdens_water,
+                multip.results.qdens_ions,
                 efield,
                 phi,
             ]
@@ -233,11 +232,11 @@ if __name__ == "__main__":
 
     # Plot the results
 
-    plt.plot(z, multip.charge_dens, label="rho")
+    plt.plot(z, multip.results.charge_dens, label="rho")
     plt.plot(
-        z, multip.quadrapole[2, 2, :], label="P_z"
+        z, multip.results.quadrupole[2, 2, :], label="P_z"
     )  # TODO: plot densities of these components
-    plt.plot(z, multip.dipole[2, :], label="Q_ZZ")
+    plt.plot(z, multip.results.dipole[2, :], label="Q_ZZ")
     plt.xlabel("$z$ / Angstrom")
     plt.ylabel("Charge density / e/Angstrom$^3$")
     plt.savefig("profs.png")
@@ -255,10 +254,10 @@ if __name__ == "__main__":
     plt.savefig("potential_and_field_plots.png")
     plt.show()
 
-    plt.plot(z, multip.cos_theta, label=r"$\langle \cos(\theta)\rangle$")
+    plt.plot(z, multip.results.cos_theta, label=r"$\langle \cos(\theta)\rangle$")
     plt.plot(
         z,
-        multip.angular_moment_2,
+        multip.results.angular_moment_2,
         label=r"$\frac{1}{2}\left 3\langle \cos(\theta)^2\rangle-1\right)",
     )
     plt.savefig("angles.png")
