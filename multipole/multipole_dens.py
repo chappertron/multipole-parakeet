@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, List, Optional, Union
 import numpy as np
 import numpy.linalg as la
 import MDAnalysis as mda
@@ -20,35 +20,60 @@ class Multipoles(AnalysisBase):
     def __init__(
         self,
         select,
-        centre="M",
+        *,
         grouping="water",
-        axis="z",
-        ll: float = 0.0,
-        ul: Union[float, None] = None,
+        axis: str = "z",
+        lower_limit: float = 0.0,
+        upper_limit: Union[float, None] = None,
         binsize: float = 0.25,
-        H_types=["H"],
-        type_or_name=None,
+        centre: str | int = "M",
+        H_types: List[str | int] = ["H"],
+        type_or_name: Optional[str] = None,
         calculate_dummy: bool = False,  # Calculate the dummy atom positions on the fly
         model_params: Union[str, Dict, PCParams] = "tip4p05",
         unwrap: bool = False,
         **kwargs,
     ):
         """
-        Prepare the Analysis Class.
+        Prepares the Multipoles analysis class.
 
-        select : Trajectory Selection
-
-        centre : Atom label for defining the origin. default: 'M' the dummy/oxygen
-                 atom location
-        grouping "water" or "residue": default 'water'
-
-        TODO: ! Add contributions to charge from other parts of the system
-            - Find a way to select atoms that aren't in the water molecule
-              independently
-
-        Options
-            model_params - Name of water model params
-                           (see point_charge_water.pc_params) or set of parameters
+        Arguments
+        ---------
+        select :
+            Trajectory Selection
+        centre :
+            Atom name or type for defining the dummy/oxygen atom location.
+            This is used as the origin for binning and caculation of molecular dipoles
+            for `grouping`="water".
+            default: 'M'
+        H_types :
+            The name or type(s) used for the Hydrogen atoms.
+        grouping :
+            "water" or "residue": default 'water'
+            For grouping water, the non-water atoms have their charge densities tallied in
+            the `qdens_ions` field.
+        model_params :
+            Name of water model or a set of parameters in a Dictionary.
+            (see point_charge_water.pc_params)
+            Valid names are ["tip4p05", "opc", "spce", "tip3p"]
+        axis:
+            The name of the axis to bin along.
+            Valid options are: "x", "y" or "z"
+        binsize:
+            The spacing (in distance units) to use for binning the results.
+        lower_limit:
+            The lower bounds of binning. Defaults to zero.
+        upper_limit:
+            The upper bounds of binning. Defaults to edge of the box.
+        calculate_dummy: bool = False,
+            Calculate the position of dummy atoms in water molecules on the fly.
+        unwrap: bool = False
+            If true, will unwrap the atomic coordinates on the fly, otherwise, will
+            assume they are already unwrapped. Unwrapping is required for molecular
+            multipole moments.
+        kwargs:
+            Dictionary of keyword arguments passed down to the MDAnalysis AnalysisBase
+            class.
 
         """
         # Use the AnalysisBase Init Function. Set everything up
@@ -83,16 +108,15 @@ class Multipoles(AnalysisBase):
         # or name.
         # if selected manually, takes priority, else determines if names or types are
         # defined
-
         if type_or_name is not None:
             self.type_or_name = type_or_name
         else:
             self.type_or_name = check_types_or_names(self._universe)
 
-        # Box sides
         self.centretype = centre  # name or type of atom central atom per molecule
-        self.grouping = grouping
 
+        # Grouping
+        self.grouping = grouping
         if self.grouping == "water":
             self.H_types = H_types
         elif self.grouping == "residue":
@@ -101,8 +125,8 @@ class Multipoles(AnalysisBase):
             # TODO: Add `molecular` grouping based on molecule ids
             raise ValueError("Only grouping='water' or 'residue' are supported.")
 
-        # currently only supports orthogonal boxes
-        # get the index for the axis used here
+        # Currently only supports orthogonal boxes
+        # Get the index for the axis used here
         self._axind = self._axis_map[axis]
 
         self.dimensions = self._universe.dimensions[:3]
@@ -110,12 +134,12 @@ class Multipoles(AnalysisBase):
         self.volume = np.prod(self.dimensions)
 
         # if ul is defined and smaller than the axis extent
-        if ul and ul < self.dimensions[self._axind]:
-            self.ul = ul
+        if upper_limit and upper_limit < self.dimensions[self._axind]:
+            self.ul = upper_limit
         else:
             self.ul = self.dimensions[self._axind]
         # Raise error if ll < ul
-        self.ll = ll
+        self.ll = lower_limit
         if self.ll > self.ul:
             raise ValueError(
                 f"Lower limit of axis {self._axind} must be smaller "
