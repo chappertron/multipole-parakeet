@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="multipole_dens",
-    version="0.2.0",
+    version="0.3.0-dev",
     author="Aidan C",
     packages=["multipole"],
     scripts=["bin/calc_multipoles_dens"],
