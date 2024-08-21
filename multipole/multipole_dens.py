@@ -29,6 +29,8 @@ class FrameResult:
     mol_density: NDArray
     cos_theta: NDArray
     angular_moment_2: NDArray
+    dipole_total: NDArray
+    quadrupole_total: NDArray
 
 
 class Multipoles(AnalysisBase):
@@ -189,6 +191,8 @@ class Multipoles(AnalysisBase):
             mol_density=np.zeros(self.nbins),
             qdens_water=np.zeros(self.nbins),
             qdens_ions=np.zeros(self.nbins),
+            quadrupole_total=np.zeros((3, 3, self.nbins)),
+            dipole_total=np.zeros((3, self.nbins)),
         )
 
         # Variables later defined in _prepare() method
@@ -332,6 +336,48 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
+        dipole_total = (
+            self.charged_atoms.charges[:, np.newaxis] * self.charged_atoms.positions
+        )
+
+        # Bin the dipole moment
+        dipole_total = np.vstack(
+            [
+                histogram1d(
+                    (self.charged_atoms.positions % self.dimensions)[:, self._axind],
+                    bins=self.nbins,
+                    weights=dipole_total[:, i],
+                    range=self.range,
+                )
+                for i in range(3)
+            ]
+        )
+
+        quadrupole_total = calculate_Q_total(
+            self.charged_atoms.positions,
+            self.charged_atoms.charges,
+        )
+
+        quadrupole_total = np.stack(
+            [
+                [
+                    histogram1d(
+                        (self.charged_atoms.positions % self.dimensions)[
+                            :, self._axind
+                        ],
+                        bins=self.nbins,
+                        range=self.range,
+                        weights=quadrupole_total[:, i, j],
+                    )
+                    for i in range(3)
+                ]
+                for j in range(3)
+            ]
+        )
+
+        assert quadrupole_total.shape == (3, 3, self.nbins)
+        assert dipole_total.shape == (3, self.nbins)
+
         results = FrameResult(
             dipole=mu_hist,
             quadrupole=Q_hist,
@@ -341,6 +387,8 @@ class Multipoles(AnalysisBase):
             mol_density=mol_hist,
             cos_theta=angle_hist,
             angular_moment_2=angle_sq_hist,
+            dipole_total=dipole_total,
+            quadrupole_total=quadrupole_total,
         )
 
         self._tally_results(results)
@@ -465,6 +513,48 @@ class Multipoles(AnalysisBase):
             range=self.range,
         )
 
+        dipole_total = (
+            self.charged_atoms.charges[:, np.newaxis] * self.charged_atoms.positions
+        )
+
+        # Bin the dipole moment
+        dipole_total = np.vstack(
+            [
+                histogram1d(
+                    (self.charged_atoms.positions % self.dimensions)[:, self._axind],
+                    bins=self.nbins,
+                    weights=dipole_total[:, i],
+                    range=self.range,
+                )
+                for i in range(3)
+            ]
+        )
+
+        quadrupole_total = calculate_Q_total(
+            self.charged_atoms.positions,
+            self.charged_atoms.charges,
+        )
+
+        quadrupole_total = np.stack(
+            [
+                [
+                    histogram1d(
+                        (self.charged_atoms.positions % self.dimensions)[
+                            :, self._axind
+                        ],
+                        bins=self.nbins,
+                        range=self.range,
+                        weights=quadrupole_total[:, i, j],
+                    )
+                    for i in range(3)
+                ]
+                for j in range(3)
+            ]
+        )
+
+        assert quadrupole_total.shape == (3, 3, self.nbins)
+        assert dipole_total.shape == (3, self.nbins)
+
         results = FrameResult(
             dipole=mu_hist,
             quadrupole=Q_hist,
@@ -474,6 +564,8 @@ class Multipoles(AnalysisBase):
             mol_density=mol_hist,
             cos_theta=angle_hist,
             angular_moment_2=angle_sq_hist,
+            dipole_total=dipole_total,
+            quadrupole_total=quadrupole_total,
         )
 
         self._tally_results(results)
@@ -518,6 +610,9 @@ class Multipoles(AnalysisBase):
             # molecules per chunk.
             cos_theta=tally.cos_theta / n_frames,
             angular_moment_2=tally.angular_moment_2 / n_frames,
+            # TODO: Normalise by the number of atoms in the chunk
+            dipole_total=tally.dipole_total / n_frames / vol * e,
+            quadrupole_total=tally.quadrupole_total / n_frames / vol * e,
         )
 
     ## Helper methods
@@ -534,6 +629,9 @@ class Multipoles(AnalysisBase):
 
         self._results_tally.cos_theta += result.cos_theta
         self._results_tally.angular_moment_2 += result.angular_moment_2
+
+        self._results_tally.dipole_total += result.dipole_total
+        self._results_tally.quadrupole_total += result.quadrupole_total
 
 
 # Library Functions
@@ -633,6 +731,19 @@ def calculate_Q_no_numba(Mpos, H1, H2, qH):
     v2_sq = v2.reshape([-1, 3, 1]) @ v2.reshape([-1, 1, 3])
 
     return 0.5 * (qH * v1_sq + qH * v2_sq)
+
+
+def calculate_Q_total(positions: NDArray, charges: NDArray) -> NDArray:
+    """Calculating the quadrupoles. Rather than iterating over per atom,
+    iterates over per component. Iterate over 9 things rather than 2000
+
+    Includes a factor of two.
+    """
+
+    # the outer product of the same N*3 array to give a N*3*3 array
+    pos_sq = positions.reshape([-1, 3, 1]) @ positions.reshape([-1, 1, 3])
+
+    return 0.5 * charges[:, np.newaxis, np.newaxis] * pos_sq
 
 
 @jit(nopython=True)

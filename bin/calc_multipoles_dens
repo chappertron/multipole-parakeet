@@ -224,10 +224,21 @@ if __name__ == "__main__":
                 multip.results.qdens_ions,
                 efield,
                 phi,
+                # Simply binned, not per molecule
+                multip.results.dipole_total[0, :],
+                multip.results.dipole_total[1, :],
+                multip.results.dipole_total[2, :],
+                multip.results.quadrupole_total[0, 0, :],
+                multip.results.quadrupole_total[1, 1, :],
+                multip.results.quadrupole_total[2, 2, :],
+                multip.results.quadrupole_total[0, 1, :],
+                multip.results.quadrupole_total[0, 2, :],
+                multip.results.quadrupole_total[1, 2, :],
             ]
         ).T,
         header="coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz "
-        "rho_mol cos_theta cos_theta_moment_2 qdens_water qdens_ions efield phi",
+        "rho_mol cos_theta cos_theta_moment_2 qdens_water qdens_ions efield phi "
+        "P_tot_x P_tot_y P_tot_z Q_tot_xx Q_tot_yy Q_tot_zz Q_tot_xy Q_tot_xz Q_tot_yz"
     )
 
     # Plot the results
