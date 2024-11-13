@@ -4,7 +4,7 @@
 A python package containing an MDAnalysis class to calculate charge, dipolar and quadrupolar density profiles from simulation trajectories. 
 Also includes scripts (in the bin folder) to use this class from the command line and a class for calculating per molecule electrostatic properties.
 
-If you use this package, please link to this page, cite our paper (Chapman and Bresme 2022, unpublished) and [cite the papers](https://www.mdanalysis.org/pages/citations/) of the MDAnalaysis authors
+If you use this package, please link to this page, cite our paper (Chapman and Bresme 2022, PCCP) and [cite the papers](https://www.mdanalysis.org/pages/citations/) of the MDAnalaysis authors
 
 ## Requirements and Dependencies
 
