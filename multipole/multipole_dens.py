@@ -48,6 +48,7 @@ class Multipoles(AnalysisBase):
         type_or_name: Optional[str] = None,
         calculate_dummy: bool = False,  # Calculate the dummy atom positions on the fly
         model_params: Union[str, Dict, PCParams] = "tip4p05",
+        origin_dist: float = 0.0,
         unwrap: bool = False,
         **kwargs,
     ):
@@ -173,6 +174,8 @@ class Multipoles(AnalysisBase):
         # x, y and z values can use the same "coord" column in the output file
         self.nbins = bins
         self.slice_vol = self.volume / bins
+
+        self.origin_dist = origin_dist
 
         self.keys_common = ["pos", "pos_std", "char", "char_std"]
 
@@ -360,9 +363,13 @@ class Multipoles(AnalysisBase):
         rH2: NDArray = rH[1::2]
         rM: NDArray = self.Matoms.positions
 
-        # TODO add flag for deciding if to unwrap or not
+        # TODO: add flag for deciding if to unwrap or not
         if self.unwrap:
             rM, rH1, rH2 = unwrap_water_coords(rM, rH1, rH2, self.dimensions)
+
+        # TODO: Add the calculation of different reference point here.
+        origin = get_dummy_position(rM, rH1, rH2, self.origin_dist)
+
         # Apply find positions of the dummy atom
         if self.calculate_dummy:
             # TODO unwrap the positions of the oxygen and hydrogen atoms
@@ -371,14 +378,13 @@ class Multipoles(AnalysisBase):
             self.Matoms.positions = rM
 
         # wrapping coords. Needed for the calculation of the
-        rMw = (
-            rM % self.dimensions
-        )  # mod of the positions with respect to the box dimensions
+        # mod of the positions with respect to the box dimensions
+        origin_w = origin % self.dimensions
 
         # calculate the dipole and quadrupole moments of the water molecules
         mus = calculate_dip(rM, [rH1, rH2], qH)
         # print(Q.shape)
-        quad = calculate_Q(rM, rH1, rH2, qH)  # full tensor
+        quad = calculate_Q(rM, rH1, rH2, qH, origin)  # full tensor
 
         # calculate the first angle moment by projecting on z axis
         # first axis is atoms, second axis are the cartesian components
@@ -390,8 +396,8 @@ class Multipoles(AnalysisBase):
 
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
-        # z position
-        zMw = rMw[:, self._axind]
+        # z position used for binning
+        zMw = origin_w[:, self._axind]
         # zposes = vstack([zM]*3).T
 
         # Calculate the histograms, with positions on the dummy atom,
@@ -565,7 +571,9 @@ def calculate_dip(Mpos, Hposes, qH):
     # I guess not maybe...
     # TODO: Allow a different origin for dipole moment calculation
 
-    return ((Hposes[0] - Mpos) + (Hposes[1] - Mpos)) * qH
+    dip_dir = (Hposes[0] - Mpos) + (Hposes[1] - Mpos)
+
+    return dip_dir * qH
 
 
 def calculate_dip_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
@@ -636,7 +644,7 @@ def calculate_Q_no_numba(Mpos, H1, H2, qH):
 
 
 @jit(nopython=True)
-def calculate_Q(Mpos, H1, H2, qH):
+def calculate_Q(Mpos, H1, H2, qH, origin):
     """New version of calculating the charges, rather than iterating over per atom,
     iterate over per component??? iterate over 9 things rather than 2000
     TODO add more general implementation for residue/fragment groupings
@@ -647,15 +655,20 @@ def calculate_Q(Mpos, H1, H2, qH):
 
     """
 
-    v1 = H1 - Mpos
-    v2 = H2 - Mpos
+    v1 = H1 - origin
+    v2 = H2 - origin
+    v3 = Mpos - origin
 
     result = np.zeros((len(v1), 3, 3))
 
     for i in range(len(v1)):
         for j in range(3):
             for k in range(3):
-                result[i, j, k] = v1[i, j] * v1[i, k] + v2[i, j] * v2[i, k]
+                result[i, j, k] = (
+                    v1[i, j] * v1[i, k]
+                    + v2[i, j] * v2[i, k]
+                    - 2.0 * v3[i, j] * v3[i, k]  # Term due to -ve charge
+                )
 
     return 0.5 * (qH * result)
 

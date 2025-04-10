@@ -114,6 +114,14 @@ def set_up_parser():
         "or name. By default tries to work it out from the topology file.",
     )
 
+    parser.add_argument(
+        "--origin-dist",
+        default=0.0,
+        type=float,
+        help="Distance from the oxygen along the dipole moment to use as the reference "
+        "point for the multipole calculations.",
+    )
+
     return parser
 
 
@@ -163,6 +171,7 @@ if __name__ == "__main__":
         calculate_dummy=args.calculate_dummy,
         unwrap=args.unwrap,
         grouping=args.grouping,
+        origin_dist=args.origin_dist,
     )
 
     # Run the calculation
