@@ -692,7 +692,7 @@ def calculate_Q_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDA
             for k in range(3):
                 result[j, k] += q * p[j] * p[k]
 
-    return result
+    return 0.5 * result
 
 
 def check_types_or_names(universe: mda.Universe) -> str:
