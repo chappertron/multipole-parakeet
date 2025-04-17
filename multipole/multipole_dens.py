@@ -89,6 +89,9 @@ class Multipoles(AnalysisBase):
             If true, will unwrap the atomic coordinates on the fly, otherwise, will
             assume they are already unwrapped. Unwrapping is required for molecular
             multipole moments.
+        origin: float = 0.0
+            Distance from the oxygen along the dipole moment vector used for the
+            calculation of multipole moments and binning.
         kwargs:
             Dictionary of keyword arguments passed down to the MDAnalysis AnalysisBase
             class.
@@ -208,18 +211,24 @@ class Multipoles(AnalysisBase):
                 f"{self.type_or_name} {self.centretype}"
             )
             self.Hatoms: mda.AtomGroup = self._universe.select_atoms(
-                f"{self.type_or_name} {' '.join(self.H_types)}"
+                f"{self.type_or_name} {' '.join((str(t) for t in self.H_types))}"
+            )
+
+            # All water atoms
+            self.water_atoms: mda.AtomGroup = self._universe.select_atoms(
+                f"{self.type_or_name} {self.centretype} {' '.join((str(t) for t in self.H_types))}"
             )
 
             self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
 
             # Select atoms that are not hydrogen or oxygen
             self.ions: mda.AtomGroup = self._universe.select_atoms(
-                f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
+                f"not {self.type_or_name} {self.centretype} {' '.join((str(t) for t in self.H_types))}"
             )
         else:
+            # TODO: Verify _universe.atoms is not None
             self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
-            self.ions: mda.AtomGroup = self._universe.atoms
+            self.ions: mda.AtomGroup = self._universe.atoms  # pyright: ignore
 
     def _single_frame(self):
         """
@@ -246,6 +255,11 @@ class Multipoles(AnalysisBase):
         # TODO: Deal with the horrendous amount of duplication found here.
 
         residues = self._universe.residues
+
+        if residues is None:
+            raise ValueError(
+                'Expected residues to be defined in topology for grouping="residue"'
+            )
 
         rM = com_residues(residues)
 
