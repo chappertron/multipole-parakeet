@@ -363,6 +363,9 @@ class Multipoles(AnalysisBase):
         rH2: NDArray = rH[1::2]
         rM: NDArray = self.Matoms.positions
 
+        # TODO: Double check the order is the expected order
+        r_water: NDArray = self.water_atoms.positions
+
         # TODO: add flag for deciding if to unwrap or not
         if self.unwrap:
             rM, rH1, rH2 = unwrap_water_coords(rM, rH1, rH2, self.dimensions)
@@ -380,6 +383,9 @@ class Multipoles(AnalysisBase):
         # wrapping coords. Needed for the calculation of the
         # mod of the positions with respect to the box dimensions
         origin_w = origin % self.dimensions
+        r_water_w = r_water % self.dimensions
+
+        # TODO: Make this an option.
 
         # calculate the dipole and quadrupole moments of the water molecules
         mus = calculate_dip(rM, [rH1, rH2], qH)
@@ -396,15 +402,31 @@ class Multipoles(AnalysisBase):
 
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
+        # TODO: Move this to some sort of external
+        # TODO: Support more kinds of spread
+        SPREAD = True
+
         # z position used for binning
-        zMw = origin_w[:, self._axind]
+        if SPREAD:
+            zMw = r_water_w[:, self._axind]
+
+            def spread_f(x: NDArray) -> NDArray:
+                return x.repeat(3)
+        else:
+            zMw = origin_w[:, self._axind]
+
+            def spread_f(x: NDArray) -> NDArray:
+                return x
+
         # zposes = vstack([zM]*3).T
 
         # Calculate the histograms, with positions on the dummy atom,
         # weighted by the property being binned
         mu_hist = np.vstack(
             [
-                histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)
+                histogram1d(
+                    zMw, bins=self.nbins, weights=spread_f(mus[:, i]), range=self.range
+                )
                 for i in range(3)
             ]
         )
@@ -416,7 +438,7 @@ class Multipoles(AnalysisBase):
                         zMw,
                         bins=self.nbins,
                         range=self.range,
-                        weights=quad[:, i, j],
+                        weights=spread_f(quad[:, i, j]),
                     )
                     for i in range(3)
                 ]
@@ -426,23 +448,29 @@ class Multipoles(AnalysisBase):
 
         # assert (np.abs(Q_hist_fast-Q_hist) < 1e-17).all()
 
+        # TODO: This is now just number density when using spread, not molecule density...
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
         # un weighted!
 
         # NOTE: These are divided by the number of molecules in each bin;
         # i.e., average of  cos(theta) per bin
         angle_hist = np.nan_to_num(
-            histogram1d(zMw, bins=self.nbins, weights=cos_theta, range=self.range)
+            histogram1d(
+                zMw, bins=self.nbins, weights=spread_f(cos_theta), range=self.range
+            )
             / mol_hist
         )  # divided by the number of molecules
 
         # convert nans in profiles to zeros -> assumes that if density is zero then
         # can't have any angles!!!!
         angle_sq_hist = np.nan_to_num(
-            histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)
+            histogram1d(
+                zMw, bins=self.nbins, weights=spread_f(cos_moment_2), range=self.range
+            )
             / mol_hist
         )
 
+        # NOTE: These are not spread (via `.repeat(3)`) because they are already per atom
         # TODO: Change to use the moved positions of the oxygen charges!
         charge_hist = histogram1d(
             (self.charged_atoms.positions % self.dimensions)[:, self._axind],
