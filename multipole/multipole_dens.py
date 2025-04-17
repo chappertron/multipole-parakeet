@@ -272,6 +272,8 @@ class Multipoles(AnalysisBase):
 
         # TODO: Implement quadrupole calculations
         quad = np.zeros((residues.n_residues, 3, 3))
+        # TODO: Add custom origins
+        quad = calculate_Q_residues(residues, rM)
 
         # wrapping coords. Needed for the calculation of the
         rMw = (
@@ -647,6 +649,50 @@ def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> N
     """
 
     return (charges[:, np.newaxis] * (positions - origin)).sum(axis=0)
+
+
+def calculate_Q_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
+    """
+    Calculate the dipole moment of each residue (molecule) in the system.
+    """
+
+    output = np.zeros((residues.n_residues, 3, 3))
+
+    # TODO: Find a way to avoid this likely slow iteration over residues.
+    for i, (com, res) in enumerate(zip(origins, residues)):
+        output[i] = calculate_Q_ag(res.atoms.positions, res.atoms.charges, com)
+
+    return output
+
+
+@jit()
+def calculate_Q_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
+    """
+    Calculate the Quadrupole Moment of an atom group, relative to a provided
+
+    Arguments
+    ---------
+    positions:
+        A (N,3) numpy array of atom positions
+    charges:
+        A (N,) numpy array of atomic charges in the molecule
+    origin:
+        The origin used for the quadrupole moment calculation. Should have shape (3,)
+    """
+
+    pos_rel = positions - origin
+
+    result = np.zeros((3, 3))
+
+    # TODO: probably could write this in numpy primatives without
+    for i in range(len(pos_rel)):
+        q = charges[i]
+        p = pos_rel[i]
+        for j in range(3):
+            for k in range(3):
+                result[j, k] += q * p[j] * p[k]
+
+    return result
 
 
 def check_types_or_names(universe: mda.Universe) -> str:
