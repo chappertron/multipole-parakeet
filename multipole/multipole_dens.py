@@ -261,19 +261,29 @@ class Multipoles(AnalysisBase):
                 'Expected residues to be defined in topology for grouping="residue"'
             )
 
-        rM = com_residues(residues)
+        atoms = self._universe.atoms
+
+        if atoms is None:
+            raise ValueError("Atoms not defined!")
+
+        # FIXME: Add an assertion that the residues are properly ordered.
+        res_splits = calculate_res_splits(atoms)
+
+        rM = com_residues(res_splits, atoms.positions, atoms.masses)
 
         if self.unwrap:
             # TODO:
             warnings.warn("Unwrap is not currently applied for residues")
 
         # Dipoles per residue
-        mus = calculate_dip_residues(residues, rM)
+        mus = calculate_dip_residues(res_splits, atoms.positions, atoms.charges, rM)
+
+        assert not np.isclose(mus, 0.0).all(), "Dipole moment was all zero!"
 
         # TODO: Implement quadrupole calculations
-        quad = np.zeros((residues.n_residues, 3, 3))
+        # quad = np.zeros((residues.n_residues, 3, 3))
         # TODO: Add custom origins
-        quad = calculate_Q_residues(residues, rM)
+        quad = calculate_Q_residues(res_splits, atoms.positions, atoms.charges, rM)
 
         # wrapping coords. Needed for the calculation of the
         rMw = (
@@ -284,9 +294,6 @@ class Multipoles(AnalysisBase):
         # first axis is atoms, second axis are the cartesian components
         # TODO: deal with warning that occurs on first frame
         cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
-
-        # if self._universe.trajectory.frame % 1000 == 0:
-        # print('cos(theta)',cos_theta[100],mus[100])
 
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
@@ -589,19 +596,82 @@ class Multipoles(AnalysisBase):
 # Library Functions
 
 
-def com(ag: mda.AtomGroup) -> NDArray:
-    return (ag.positions * ag.masses[:, np.newaxis]).sum(axis=0) / ag.masses.sum()
+def calculate_res_splits(atoms: mda.AtomGroup) -> NDArray:
+    """
+    Generate a list of ending offsets for each residue.
+
+    This method requires that the atoms of each residue are contiguous in
+    the atom array. This may not be true for larger molecules
+
+    """
+
+    # FIXME: assert that all atoms in a residue are contiguous
+    # An easy way would be to pass in a sorted list.
+
+    splits = _find_res_splits(atoms.resids, atoms.n_residues)
+
+    return splits
 
 
-def com_residues(residues: mda.ResidueGroup) -> NDArray:
+@jit()
+def _find_res_splits(res_ids: NDArray, n_res: int) -> NDArray:
+    """ """
+    # FIXME: assert that atoms of a residue are all contiguous.
+
+    current_res_type = res_ids[0]
+
+    stack_top = 0
+    res_splits = np.zeros((n_res,), dtype="int")
+
+    for i, r in enumerate(res_ids):
+        if r != current_res_type:
+            # FIXME: bounds error will occur if this is less than the number of residues
+            assert stack_top <= n_res - 1
+            res_splits[stack_top] = int(i)
+            current_res_type = r
+            stack_top += 1
+
+    res_splits[n_res - 1] = n_res
+
+    return res_splits
+
+
+@jit
+def com(positions: NDArray, masses: NDArray) -> NDArray:
+    """
+    Calculate the Centre of Mass from the provided positions and masses.
+    """
+    return (positions * masses[:, np.newaxis]).sum(axis=0) / masses.sum()
+
+
+@jit()
+def com_residues(
+    residue_indexes: NDArray, positions: NDArray, masses: NDArray
+) -> NDArray:
     """
     Calculate the Centre of Mass for each residue in the system.
-    """
-    output = np.zeros((residues.n_residues, 3))
 
-    # TODO: Find a way to avoid this likely slow iteration over residues.
-    for i, res in enumerate(residues):
-        output[i] = com(res.atoms)
+    Parameters
+    ---------
+    residue_starts
+        An array of the inital offsets of the first item in each residue
+    positions
+        Atom group of the residue
+
+    Warnings
+    --------
+    All vectors must be sorted by residue ID.
+    """
+    output = np.zeros((len(residue_indexes), 3))
+    start_idx = 0
+
+    for i, split in enumerate(residue_indexes):
+        output[i] = com(
+            positions[start_idx:split],
+            masses[start_idx:split],
+        )
+
+        start_idx = split
 
     return output
 
@@ -620,23 +690,36 @@ def calculate_dip(Mpos, Hposes, qH):
     return dip_dir * qH
 
 
-def calculate_dip_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
+@jit()
+def calculate_dip_residues(
+    residue_offsets: NDArray,
+    positions: NDArray,
+    charges: NDArray,
+    origins: NDArray,
+) -> NDArray:
     """
     Calculate the dipole moment of each residue (molecule) in the system.
     """
 
-    output = np.zeros((residues.n_residues, 3))
+    output = np.zeros((len(residue_offsets), 3))
+    start_idx = 0
+
+    assert len(residue_offsets) == len(origins), "dbg: Mismatched number or residues"
 
     # TODO: Find a way to avoid this likely slow iteration over residues.
-    for i, (com, res) in enumerate(zip(origins, residues)):
-        output[i] = calculate_dip_ag(res.atoms.positions, res.atoms.charges, com)
+    for i, split in enumerate(residue_offsets):
+        output[i] = calculate_dip_ag(
+            positions[start_idx:split], charges[start_idx:split], origins[i]
+        )
+        start_idx = split
 
     return output
 
 
+@jit()
 def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
     """
-    Calculate the dipole moment of an atom group, relative to an origin
+    Calculate the dipole moment of the provided atoms, relative to an origin
 
     Arguments
     ---------
@@ -651,16 +734,26 @@ def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> N
     return (charges[:, np.newaxis] * (positions - origin)).sum(axis=0)
 
 
-def calculate_Q_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
+@jit()
+def calculate_Q_residues(
+    residue_indexes: NDArray,
+    positions: NDArray,
+    charges: NDArray,
+    origins: NDArray,
+) -> NDArray:
     """
     Calculate the dipole moment of each residue (molecule) in the system.
     """
 
-    output = np.zeros((residues.n_residues, 3, 3))
+    output = np.zeros((len(residue_indexes), 3, 3))
+    start_idx = 0
 
     # TODO: Find a way to avoid this likely slow iteration over residues.
-    for i, (com, res) in enumerate(zip(origins, residues)):
-        output[i] = calculate_Q_ag(res.atoms.positions, res.atoms.charges, com)
+    for i, split in enumerate(residue_indexes):
+        output[i] = calculate_Q_ag(
+            positions[start_idx:split], charges[start_idx:split], origins[i]
+        )
+        start_idx = split
 
     return output
 
