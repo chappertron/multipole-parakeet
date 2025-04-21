@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import enum
 from .point_charge_water import PCParams, pc_parameters
 
-from typing import Dict, List, Never, Optional, Union, assert_never
+from typing import Dict, List, Optional, Union
 import warnings
 
 import numpy as np
@@ -577,11 +577,11 @@ class Multipoles(AnalysisBase):
         mu - eAA/AA^3 -> C/AA^2
         Q - eAA^2/AA^3 -> C/AA
         rho_q - e/AA^3 -> C/AA^3
-        TODO: Add option to keep in e/AA^N
 
         NOTE:
         Results are saved by normalising cumulative sums of the properties.
         """
+        # TODO: Add option to keep units in e/AA^N
 
         # Average results over the  number of configurations
 
