@@ -155,7 +155,7 @@ if __name__ == "__main__":
 
     traj_prep = TrajectoryPreparer(parser, models=pc_objs)
     # checking if the coords in last step need to be unwrapped:
-    traj_prep.wrap_check()  # TODO Remove, only unwrap arg now passed directly to multipole_dens
+    traj_prep.wrap_check()  # TODO: Remove, only unwrap arg now passed directly to multipole_dens
     traj_prep.rewind_traj()
     u = traj_prep.u
 
@@ -165,11 +165,14 @@ if __name__ == "__main__":
     # else:
     #     types_or_names = Multipoles.check_types_or_names(u)
     # verify if charges are present or not.
+
     try:
         u.atoms.charges  # type: ignore - Because no type annotations `pyright` thinks this is `None`
         charges_defined = True
     except mda.NoDataError:
         charges_defined = False
+    if args.verbose and args.calculate_dummy:
+        print("Calculating dummy atom positions on the fly!")
 
     # Set up the multipoles object
     multip = Multipoles(

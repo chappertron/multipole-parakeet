@@ -123,9 +123,6 @@ class Multipoles(AnalysisBase):
                 "calculating dummy atom locations is only supported with `grouping='water'`"
             )
 
-        if self.calculate_dummy:
-            print("Calculating dummy atom positions on the fly!")
-
         # Set the dummy parameters dict
         # TODO: refactor this out.
         if isinstance(model_params, str):
@@ -150,7 +147,7 @@ class Multipoles(AnalysisBase):
         if type_or_name is not None:
             self.type_or_name = type_or_name
         else:
-            self.type_or_name = check_types_or_names(self._universe)
+            self.type_or_name = _check_types_or_names(self._universe)
 
         self.centretype = centre  # name or type of atom central atom per molecule
 
@@ -425,7 +422,7 @@ class Multipoles(AnalysisBase):
         r_water: NDArray = self.water_atoms.positions
 
         if self.unwrap:
-            rM, rH1, rH2 = unwrap_water_coords(rM, rH1, rH2, self.dimensions)
+            rM, rH1, rH2 = _unwrap_water_coords(rM, rH1, rH2, self.dimensions)
 
         # NOTE: Get dummy position is being re-used for calculating positions along
         # the dipole vector, away from `rM`
@@ -451,9 +448,6 @@ class Multipoles(AnalysisBase):
         # first axis is atoms, second axis are the cartesian components
         # TODO: deal with warning that occurs on first frame
         cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
-
-        # if self._universe.trajectory.frame % 1000 == 0:
-        # print('cos(theta)',cos_theta[100],mus[100])
 
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
@@ -822,7 +816,7 @@ def calculate_Q_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDA
     return 0.5 * result
 
 
-def check_types_or_names(universe: mda.Universe) -> str:
+def _check_types_or_names(universe: mda.Universe) -> str:
     """
     Determine whether the `mda.Universe` is using names or types for the atom types
     """
@@ -837,25 +831,6 @@ def check_types_or_names(universe: mda.Universe) -> str:
         except mda.NoDataError:
             raise mda.NoDataError("Universe has neither atom type or name information.")
     return type_or_name
-
-
-def calculate_Q_no_numba(Mpos, H1, H2, qH):
-    """Calculating the quadrupoles. Rather than iterating over per atom,
-    iterates over per component. Iterate over 9 things rather than 2000
-    """
-
-    # TODO: add more general implementation for residue/fragment groupings
-    # and a water calculation.
-
-    v1 = H1 - Mpos
-    v2 = H2 - Mpos
-
-    # the outer product of the same N*3 array to give a N*3*3 array
-    v1_sq = v1.reshape([-1, 3, 1]) @ v1.reshape([-1, 1, 3])
-    # the -1 in the first dimension indicates reshaping so that
-    v2_sq = v2.reshape([-1, 3, 1]) @ v2.reshape([-1, 1, 3])
-
-    return 0.5 * (qH * v1_sq + qH * v2_sq)
 
 
 @jit(nopython=True)
@@ -888,26 +863,6 @@ def calculate_Q(Mpos, H1, H2, qH, origin):
     return 0.5 * (qH * result)
 
 
-def get_dummy_position_no_numba(
-    xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float
-) -> NDArray:
-    """
-    Calculate the position of the dummy atoms from the positions of the oxygen
-    and hydrogen atoms
-    Assumes that hydrogen atoms for a given molecule have neighbouring indices.
-    """
-    dx1 = xH1 - xO
-    dx2 = xH2 - xO
-    # TODO: faster to pass in bond length manually? Not useful for the case of flexible
-    # water models
-    dxM = dx1 + dx2
-
-    # Normalise the vector
-    # Indexing ensures normalisation over correct axis and gives correct shape
-    dxM = dxM / la.norm(dxM, axis=1)[:, None]
-    return xO + dM * dxM
-
-
 @jit(nopython=True)
 def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> NDArray:
     """
@@ -933,8 +888,8 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
 
 
 # TODO: These type annotations don't seem to work when called
-@jit((float32[:, :], float32[:, :], float32[:, :], float32[:]), nopython=True)
-def unwrap_water_coords(rO, rH1, rH2, box):
+@jit(nopython=True)
+def _unwrap_water_coords(rO, rH1, rH2, box):
     """
     Iterate over atoms then over dimensions, check if bond is longer
     than half box length and apply unwrapping if necessary
