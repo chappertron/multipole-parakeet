@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import enum
 from .point_charge_water import PCParams, pc_parameters
 
 from typing import Dict, List, Optional, Union
@@ -14,9 +15,8 @@ from numba import jit
 from numba import float32
 from fast_histogram import histogram1d
 
+
 # Structs for Results
-
-
 @dataclass
 class FrameResult:
     """Histogram results per frame"""
@@ -29,6 +29,11 @@ class FrameResult:
     mol_density: NDArray
     cos_theta: NDArray
     angular_moment_2: NDArray
+
+
+class CentreMethod(enum.StrEnum):
+    ATOM = "atom"
+    COM = "com"
 
 
 class Multipoles(AnalysisBase):
@@ -44,6 +49,7 @@ class Multipoles(AnalysisBase):
         upper_limit: Union[float, None] = None,
         binsize: float = 0.25,
         centre: str | int = "M",
+        centre_method: Optional[CentreMethod | str] = None,
         H_types: List[str | int] = ["H"],
         type_or_name: Optional[str] = None,
         calculate_dummy: bool = False,  # Calculate the dummy atom positions on the fly
@@ -58,18 +64,27 @@ class Multipoles(AnalysisBase):
         Arguments
         ---------
         select :
-            Trajectory Selection
+            MDAnalysis Trajectory Selection
         centre :
             Atom name or type for defining the dummy/oxygen atom location.
             This is used as the origin for binning and caculation of molecular dipoles
-            for `grouping`="water".
+            for `grouping`="water" or with `grouping="residue"` in conjuction with `centre_method`.
             default: 'M'
         H_types :
             The name or type(s) used for the Hydrogen atoms.
+        centre_method:
+            None - defaults to COM for grouping residue, ATOM for grouping water
+            atom: atom type or name specified with `centre`
+            com: use the centre of mass
+            Has no effect for `grouping='water'` currently.
         grouping :
             "water" or "residue": default 'water'
             For grouping water, the non-water atoms have their charge densities tallied in
             the `qdens_ions` field.
+        origin: float = 0.0
+            Distance from the oxygen along the dipole moment vector used for the
+            calculation of multipole moments and binning.
+            Only for `grouping="water"`
         model_params :
             Name of water model or a set of parameters in a Dictionary.
             (see point_charge_water.pc_params)
@@ -89,13 +104,9 @@ class Multipoles(AnalysisBase):
             If true, will unwrap the atomic coordinates on the fly, otherwise, will
             assume they are already unwrapped. Unwrapping is required for molecular
             multipole moments.
-        origin: float = 0.0
-            Distance from the oxygen along the dipole moment vector used for the
-            calculation of multipole moments and binning.
         kwargs:
             Dictionary of keyword arguments passed down to the MDAnalysis AnalysisBase
             class.
-
         """
         # Use the AnalysisBase Init Function. Set everything up
         # grab init
@@ -104,12 +115,20 @@ class Multipoles(AnalysisBase):
         # allows use of run(parallel=True)
         self._ags = [select]
         self._universe: mda.Universe = select.universe
+
         # Set options
 
         self.calculate_dummy = calculate_dummy
+        if calculate_dummy and grouping != "water":
+            raise ValueError(
+                "calculating dummy atom locations is only supported with `grouping='water'`"
+            )
+
         if self.calculate_dummy:
             print("Calculating dummy atom positions on the fly!")
+
         # Set the dummy parameters dict
+        # TODO: refactor this out.
         if isinstance(model_params, str):
             try:
                 self.model_params: PCParams = pc_parameters[model_params]
@@ -146,6 +165,16 @@ class Multipoles(AnalysisBase):
             # TODO: Add `molecular` grouping based on molecule ids
             raise ValueError("Only grouping='water' or 'residue' are supported.")
 
+        if centre_method is None:
+            if self.grouping == "water":
+                self.centre_method = CentreMethod.ATOM
+            elif self.grouping == "residue":
+                self.centre_method = CentreMethod.COM
+            else:
+                raise ValueError("Only grouping='water' or 'residue' are supported.")
+        else:
+            self.centre_method = CentreMethod(centre_method)
+
         # Currently only supports orthogonal boxes
         # Get the index for the axis used here
         self._axind = self._axis_map[axis]
@@ -166,6 +195,7 @@ class Multipoles(AnalysisBase):
                 f"Lower limit of axis {self._axind} must be smaller "
                 "than the upper limit!"
             )
+
         self.unwrap = unwrap
 
         self.range = (self.ll, self.ul)
@@ -178,8 +208,10 @@ class Multipoles(AnalysisBase):
         self.nbins = bins
         self.slice_vol = self.volume / bins
 
+        # Distance from the origin to use.
         self.origin_dist = origin_dist
 
+        # TODO: Unused. Remove me.
         self.keys_common = ["pos", "pos_std", "char", "char_std"]
 
         # Initialize results array with zeros/
@@ -199,6 +231,7 @@ class Multipoles(AnalysisBase):
 
         # Variables later defined in _prepare() method
         # can be variant
+        # TODO: These are unused elsewhere.
         self.masses = None
         self.charges = None
         self.totalmass = None
@@ -229,6 +262,10 @@ class Multipoles(AnalysisBase):
             # TODO: Verify _universe.atoms is not None
             self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
             self.ions: mda.AtomGroup = self._universe.atoms  # pyright: ignore
+            if self.centre_method == CentreMethod.ATOM:
+                self.Matoms: mda.AtomGroup = self._universe.select_atoms(
+                    f"{self.type_or_name} {self.centretype}"
+                )
 
     def _single_frame(self):
         """
@@ -269,7 +306,17 @@ class Multipoles(AnalysisBase):
         # FIXME: Add an assertion that the residues are properly ordered.
         res_splits = calculate_res_splits(atoms)
 
-        rM = com_residues(res_splits, atoms.positions, atoms.masses)
+        match self.centre_method:
+            case CentreMethod.COM:
+                rM = com_residues(res_splits, atoms.positions, atoms.masses)
+            case CentreMethod.ATOM:
+                rM = self.Matoms.positions
+                assert len(rM) == len(res_splits), (
+                    f"There must be only one atom of {self.type_or_name}"
+                    f" `{self.centretype}` per residue"
+                )
+            case x:
+                raise ValueError(f"Invalid centring Method '{x}'")
 
         if self.unwrap:
             # TODO:
@@ -342,7 +389,6 @@ class Multipoles(AnalysisBase):
             / mol_hist
         )
 
-        # TODO: Change to use the moved positions of the oxygen charges!
         charge_hist = histogram1d(
             (self.charged_atoms.positions % self.dimensions)[:, self._axind],
             bins=self.nbins,
@@ -378,7 +424,7 @@ class Multipoles(AnalysisBase):
 
         Version for grouping = "water"
         """
-        # TODO access this information before the frame?
+        # TODO: access this information before the frame?
         qH: NDArray = self.Hatoms.charges[0]
 
         rH: NDArray = self.Hatoms.positions
@@ -427,7 +473,7 @@ class Multipoles(AnalysisBase):
 
         # TODO: Move this to some sort of external
         # TODO: Support more kinds of spread
-        SPREAD = True
+        SPREAD = False
 
         # z position used for binning
         if SPREAD:
@@ -493,8 +539,15 @@ class Multipoles(AnalysisBase):
             / mol_hist
         )
 
-        # NOTE: These are not spread (via `.repeat(3)`) because they are already per atom
-        # TODO: Change to use the moved positions of the oxygen charges!
+        # NOTE: Asserting that the oxygen charges have been updated to be the dummy positions
+        assert np.all(
+            self.charged_atoms.select_atoms(
+                f"{self.type_or_name} {self.Matoms.types[0]}"
+            ).positions
+            == self.Matoms.positions
+        ), "Positions not set to dummy atom positions"
+
+        # NOTE: These are not spread because they are already per atom
         charge_hist = histogram1d(
             (self.charged_atoms.positions % self.dimensions)[:, self._axind],
             bins=self.nbins,

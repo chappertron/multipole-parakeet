@@ -36,6 +36,16 @@ def set_up_parser():
         choices=["water", "residue"],
         help="Specify how to determine molecules. If water, uses the M type and H type arguments to find the atoms and assumes molecules have contiguous ids. If 'residue' the molecules are found with the residue/molecule ids and the COM is used as the origin for the dipole calculation. ",
     )
+    # TODO: have this be inferred from the
+    parser.add_argument(
+        "--centre-method",
+        type=str,
+        choices=["com", "atom"],
+        default=None,
+        help="Where to put the location of the reference, for grouping='residue',"
+        "either on the COM or an atom specified with the `-M` flag",
+    )
+
     parser.add_argument(
         "-m",
         "--inmem",
@@ -169,6 +179,7 @@ if __name__ == "__main__":
         H_types=args.H_name,
         binsize=args.bin_width,
         calculate_dummy=args.calculate_dummy,
+        centre_method=args.centre_method,
         unwrap=args.unwrap,
         grouping=args.grouping,
         origin_dist=args.origin_dist,
