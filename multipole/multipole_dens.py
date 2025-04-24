@@ -659,7 +659,8 @@ def _find_res_splits(res_ids: NDArray, n_res: int) -> NDArray:
             current_res_type = r
             stack_top += 1
 
-    res_splits[n_res - 1] = n_res
+    n_atoms = len(res_ids)
+    res_splits[n_res - 1] = n_atoms
 
     return res_splits
 
