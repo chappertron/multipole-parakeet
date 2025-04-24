@@ -6,13 +6,11 @@ from typing import Dict, List, Optional, Union
 import warnings
 
 import numpy as np
-import numpy.linalg as la
 from numpy.typing import NDArray
 import MDAnalysis as mda
 from MDAnalysis.analysis.base import AnalysisBase, Results
 from scipy.constants import elementary_charge
 from numba import jit
-from numba import float32
 from fast_histogram import histogram1d
 
 
@@ -888,7 +886,6 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
     return xO + dM * dxM
 
 
-# TODO: These type annotations don't seem to work when called
 @jit(nopython=True)
 def _unwrap_water_coords(rO, rH1, rH2, box):
     """
