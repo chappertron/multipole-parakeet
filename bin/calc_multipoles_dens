@@ -131,6 +131,13 @@ def set_up_parser():
         help="Distance from the oxygen along the dipole moment to use as the reference "
         "point for the multipole calculations.",
     )
+    parser.add_argument(
+        "-p",
+        "--plot",
+        default=False,
+        action="store_true",
+        help="If this flag is set, the total potential will be shown to the screen.",
+    )
 
     return parser
 
@@ -275,7 +282,10 @@ if __name__ == "__main__":
     ax_phi.axhline(0, color="grey", linestyle="--")
 
     plt.savefig("potential_and_field_plots.png")
-    plt.show()
+    if args.plot:
+        plt.show()
+    else:
+        plt.close()
 
     plt.plot(z, multip.results.cos_theta, label=r"$\langle \cos(\theta)\rangle$")
     plt.plot(
