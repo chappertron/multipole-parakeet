@@ -36,6 +36,16 @@ def set_up_parser():
         choices=["water", "residue"],
         help="Specify how to determine molecules. If water, uses the M type and H type arguments to find the atoms and assumes molecules have contiguous ids. If 'residue' the molecules are found with the residue/molecule ids and the COM is used as the origin for the dipole calculation. ",
     )
+    # TODO: have this be inferred from the
+    parser.add_argument(
+        "--centre-method",
+        type=str,
+        choices=["com", "atom"],
+        default=None,
+        help="Where to put the location of the reference, for grouping='residue',"
+        "either on the COM or an atom specified with the `-M` flag",
+    )
+
     parser.add_argument(
         "-m",
         "--inmem",
@@ -114,6 +124,21 @@ def set_up_parser():
         "or name. By default tries to work it out from the topology file.",
     )
 
+    parser.add_argument(
+        "--origin-dist",
+        default=0.0,
+        type=float,
+        help="Distance from the oxygen along the dipole moment to use as the reference "
+        "point for the multipole calculations.",
+    )
+    parser.add_argument(
+        "-p",
+        "--plot",
+        default=False,
+        action="store_true",
+        help="If this flag is set, the total potential will be shown to the screen.",
+    )
+
     return parser
 
 
@@ -137,7 +162,7 @@ if __name__ == "__main__":
 
     traj_prep = TrajectoryPreparer(parser, models=pc_objs)
     # checking if the coords in last step need to be unwrapped:
-    traj_prep.wrap_check()  # TODO Remove, only unwrap arg now passed directly to multipole_dens
+    traj_prep.wrap_check()  # TODO: Remove, only unwrap arg now passed directly to multipole_dens
     traj_prep.rewind_traj()
     u = traj_prep.u
 
@@ -147,11 +172,14 @@ if __name__ == "__main__":
     # else:
     #     types_or_names = Multipoles.check_types_or_names(u)
     # verify if charges are present or not.
+
     try:
         u.atoms.charges  # type: ignore - Because no type annotations `pyright` thinks this is `None`
         charges_defined = True
     except mda.NoDataError:
         charges_defined = False
+    if args.verbose and args.calculate_dummy:
+        print("Calculating dummy atom positions on the fly!")
 
     # Set up the multipoles object
     multip = Multipoles(
@@ -161,8 +189,10 @@ if __name__ == "__main__":
         H_types=args.H_name,
         binsize=args.bin_width,
         calculate_dummy=args.calculate_dummy,
+        centre_method=args.centre_method,
         unwrap=args.unwrap,
         grouping=args.grouping,
+        origin_dist=args.origin_dist,
     )
 
     # Run the calculation
@@ -252,7 +282,10 @@ if __name__ == "__main__":
     ax_phi.axhline(0, color="grey", linestyle="--")
 
     plt.savefig("potential_and_field_plots.png")
-    plt.show()
+    if args.plot:
+        plt.show()
+    else:
+        plt.close()
 
     plt.plot(z, multip.results.cos_theta, label=r"$\langle \cos(\theta)\rangle$")
     plt.plot(

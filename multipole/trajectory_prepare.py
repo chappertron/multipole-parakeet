@@ -4,7 +4,7 @@ import MDAnalysis as mda
 
 import argparse
 
-from .multipole_dens import check_types_or_names
+from .multipole_dens import _check_types_or_names
 import MDAnalysis.transformations
 
 
@@ -19,6 +19,7 @@ class TrajectoryPreparer:
         args_parser: argparse.ArgumentParser,
         models: Union[Dict[str, PointChargeModel], None] = None,
     ):
+        # FIXME: This *REALLY* should just have the arguments parsed into it.
         args = args_parser.parse_args()
         self.args = args
 
@@ -45,7 +46,7 @@ class TrajectoryPreparer:
         if self.args.types_or_names:
             self.types_or_names = self.args.types_or_names
         else:
-            self.types_or_names = check_types_or_names(self.u)
+            self.types_or_names = _check_types_or_names(self.u)
 
         self.H_name = self.args.H_name
         self.M_name = self.args.M_name

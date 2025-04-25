@@ -1,22 +1,20 @@
 from dataclasses import dataclass
+import enum
 from .point_charge_water import PCParams, pc_parameters
 
 from typing import Dict, List, Optional, Union
 import warnings
 
 import numpy as np
-import numpy.linalg as la
 from numpy.typing import NDArray
 import MDAnalysis as mda
 from MDAnalysis.analysis.base import AnalysisBase, Results
 from scipy.constants import elementary_charge
 from numba import jit
-from numba import float32
 from fast_histogram import histogram1d
 
+
 # Structs for Results
-
-
 @dataclass
 class FrameResult:
     """Histogram results per frame"""
@@ -29,6 +27,11 @@ class FrameResult:
     mol_density: NDArray
     cos_theta: NDArray
     angular_moment_2: NDArray
+
+
+class CentreMethod(enum.StrEnum):
+    ATOM = "atom"
+    COM = "com"
 
 
 class Multipoles(AnalysisBase):
@@ -44,10 +47,12 @@ class Multipoles(AnalysisBase):
         upper_limit: Union[float, None] = None,
         binsize: float = 0.25,
         centre: str | int = "M",
+        centre_method: Optional[CentreMethod | str] = None,
         H_types: List[str | int] = ["H"],
         type_or_name: Optional[str] = None,
         calculate_dummy: bool = False,  # Calculate the dummy atom positions on the fly
         model_params: Union[str, Dict, PCParams] = "tip4p05",
+        origin_dist: float = 0.0,
         unwrap: bool = False,
         **kwargs,
     ):
@@ -57,18 +62,27 @@ class Multipoles(AnalysisBase):
         Arguments
         ---------
         select :
-            Trajectory Selection
+            MDAnalysis Trajectory Selection
         centre :
             Atom name or type for defining the dummy/oxygen atom location.
             This is used as the origin for binning and caculation of molecular dipoles
-            for `grouping`="water".
+            for `grouping`="water" or with `grouping="residue"` in conjuction with `centre_method`.
             default: 'M'
         H_types :
             The name or type(s) used for the Hydrogen atoms.
+        centre_method:
+            None - defaults to COM for grouping residue, ATOM for grouping water
+            atom: atom type or name specified with `centre`
+            com: use the centre of mass
+            Has no effect for `grouping='water'` currently.
         grouping :
             "water" or "residue": default 'water'
             For grouping water, the non-water atoms have their charge densities tallied in
             the `qdens_ions` field.
+        origin: float = 0.0
+            Distance from the oxygen along the dipole moment vector used for the
+            calculation of multipole moments and binning.
+            Only for `grouping="water"`
         model_params :
             Name of water model or a set of parameters in a Dictionary.
             (see point_charge_water.pc_params)
@@ -91,21 +105,24 @@ class Multipoles(AnalysisBase):
         kwargs:
             Dictionary of keyword arguments passed down to the MDAnalysis AnalysisBase
             class.
-
         """
         # Use the AnalysisBase Init Function. Set everything up
-        # grab init
         super(Multipoles, self).__init__(select.universe.trajectory, **kwargs)
 
         # allows use of run(parallel=True)
         self._ags = [select]
         self._universe: mda.Universe = select.universe
+
         # Set options
 
         self.calculate_dummy = calculate_dummy
-        if self.calculate_dummy:
-            print("Calculating dummy atom positions on the fly!")
+        if calculate_dummy and grouping != "water":
+            raise ValueError(
+                "calculating dummy atom locations is only supported with `grouping='water'`"
+            )
+
         # Set the dummy parameters dict
+        # TODO: refactor this out.
         if isinstance(model_params, str):
             try:
                 self.model_params: PCParams = pc_parameters[model_params]
@@ -128,7 +145,7 @@ class Multipoles(AnalysisBase):
         if type_or_name is not None:
             self.type_or_name = type_or_name
         else:
-            self.type_or_name = check_types_or_names(self._universe)
+            self.type_or_name = _check_types_or_names(self._universe)
 
         self.centretype = centre  # name or type of atom central atom per molecule
 
@@ -141,6 +158,16 @@ class Multipoles(AnalysisBase):
         else:
             # TODO: Add `molecular` grouping based on molecule ids
             raise ValueError("Only grouping='water' or 'residue' are supported.")
+
+        if centre_method is None:
+            if self.grouping == "water":
+                self.centre_method = CentreMethod.ATOM
+            elif self.grouping == "residue":
+                self.centre_method = CentreMethod.COM
+            else:
+                raise ValueError("Only grouping='water' or 'residue' are supported.")
+        else:
+            self.centre_method = CentreMethod(centre_method)
 
         # Currently only supports orthogonal boxes
         # Get the index for the axis used here
@@ -162,6 +189,7 @@ class Multipoles(AnalysisBase):
                 f"Lower limit of axis {self._axind} must be smaller "
                 "than the upper limit!"
             )
+
         self.unwrap = unwrap
 
         self.range = (self.ll, self.ul)
@@ -174,7 +202,8 @@ class Multipoles(AnalysisBase):
         self.nbins = bins
         self.slice_vol = self.volume / bins
 
-        self.keys_common = ["pos", "pos_std", "char", "char_std"]
+        # Distance from the origin to use.
+        self.origin_dist = origin_dist
 
         # Initialize results array with zeros/
         # these are all profiles
@@ -191,37 +220,45 @@ class Multipoles(AnalysisBase):
             qdens_ions=np.zeros(self.nbins),
         )
 
-        # Variables later defined in _prepare() method
-        # can be variant
-        self.masses = None
-        self.charges = None
-        self.totalmass = None
-
     def _prepare(self):
-        # TODO: for now just doing water generalise later
-
         if self.grouping == "water":
             self.Matoms: mda.AtomGroup = self._universe.select_atoms(
                 f"{self.type_or_name} {self.centretype}"
             )
             self.Hatoms: mda.AtomGroup = self._universe.select_atoms(
-                f"{self.type_or_name} {' '.join(self.H_types)}"
+                f"{self.type_or_name} {' '.join((str(t) for t in self.H_types))}"
+            )
+
+            # All water atoms
+            self.water_atoms: mda.AtomGroup = self._universe.select_atoms(
+                f"{self.type_or_name} {self.centretype} {' '.join((str(t) for t in self.H_types))}"
             )
 
             self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
 
             # Select atoms that are not hydrogen or oxygen
             self.ions: mda.AtomGroup = self._universe.select_atoms(
-                f"not {self.type_or_name} {self.centretype} {' '.join(self.H_types)}"
+                f"not {self.type_or_name} {self.centretype} {' '.join((str(t) for t in self.H_types))}"
             )
-        else:
+        elif self.grouping == "residue":
+            # TODO: Verify _universe.atoms is not None
             self.charged_atoms: mda.AtomGroup = self._universe.atoms  # pyright: ignore
-            self.ions: mda.AtomGroup = self._universe.atoms
+            self.ions: mda.AtomGroup = self._universe.atoms  # pyright: ignore
+            if self.centre_method == CentreMethod.ATOM:
+                self.Matoms: mda.AtomGroup = self._universe.select_atoms(
+                    f"{self.type_or_name} {self.centretype}"
+                )
+        else:
+            raise ValueError(
+                "Invalid Grouping: valid options are 'water' and 'residue' "
+            )
 
     def _single_frame(self):
         """
         Operations performed on a single frame to calculate the binning of the charge
         and dipole densities
+
+        Required for the MDAnalysis.Analysis
         """
         if self.grouping == "water":
             self._single_frame_water()
@@ -244,19 +281,40 @@ class Multipoles(AnalysisBase):
 
         residues = self._universe.residues
 
-        rM = com_residues(residues)
+        if residues is None:
+            raise ValueError(
+                'Expected residues to be defined in topology for grouping="residue"'
+            )
+
+        atoms = self._universe.atoms
+
+        if atoms is None:
+            raise ValueError("Atoms not defined!")
+
+        # FIXME: Add an assertion that the residues are properly ordered.
+        res_splits = calculate_res_splits(atoms)
+
+        match self.centre_method:
+            case CentreMethod.COM:
+                rM = com_residues(res_splits, atoms.positions, atoms.masses)
+            case CentreMethod.ATOM:
+                rM = self.Matoms.positions
+                assert len(rM) == len(res_splits), (
+                    f"There must be only one atom of {self.type_or_name}"
+                    f" `{self.centretype}` per residue"
+                )
+            case x:
+                raise ValueError(f"Invalid centring Method '{x}'")
 
         if self.unwrap:
-            # TODO:
-            warnings.warn("Unwrap is not currently applied for residues")
+            warnings.warn("Coordinate unwrapping is not applied for residues")
 
         # Dipoles per residue
-        mus = calculate_dip_residues(residues, rM)
+        mus = calculate_dip_residues(res_splits, atoms.positions, atoms.charges, rM)
 
-        # TODO: Implement quadrupole calculations
-        quad = np.zeros((residues.n_residues, 3, 3))
+        quad = calculate_Q_residues(res_splits, atoms.positions, atoms.charges, rM)
 
-        # wrapping coords. Needed for the calculation of the
+        # wrapping coords. Needed for the binning.
         rMw = (
             rM % self.dimensions
         )  # mod of the positions with respect to the box dimensions
@@ -265,9 +323,6 @@ class Multipoles(AnalysisBase):
         # first axis is atoms, second axis are the cartesian components
         # TODO: deal with warning that occurs on first frame
         cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
-
-        # if self._universe.trajectory.frame % 1000 == 0:
-        # print('cos(theta)',cos_theta[100],mus[100])
 
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
@@ -316,7 +371,6 @@ class Multipoles(AnalysisBase):
             / mol_hist
         )
 
-        # TODO: Change to use the moved positions of the oxygen charges!
         charge_hist = histogram1d(
             (self.charged_atoms.positions % self.dimensions)[:, self._axind],
             bins=self.nbins,
@@ -352,7 +406,10 @@ class Multipoles(AnalysisBase):
 
         Version for grouping = "water"
         """
-        # TODO access this information before the frame?
+        # TODO: Move this to some sort of external variable
+        # FIXME: Remove the spread code.
+        SPREAD = False
+
         qH: NDArray = self.Hatoms.charges[0]
 
         rH: NDArray = self.Hatoms.positions
@@ -360,45 +417,57 @@ class Multipoles(AnalysisBase):
         rH2: NDArray = rH[1::2]
         rM: NDArray = self.Matoms.positions
 
-        # TODO add flag for deciding if to unwrap or not
+        r_water: NDArray = self.water_atoms.positions
+
         if self.unwrap:
-            rM, rH1, rH2 = unwrap_water_coords(rM, rH1, rH2, self.dimensions)
-        # Apply find positions of the dummy atom
+            rM, rH1, rH2 = _unwrap_water_coords(rM, rH1, rH2, self.dimensions)
+
+        # NOTE: Get dummy position is being re-used for calculating positions along
+        # the dipole vector, away from `rM`
+        # `rM` at this point is the oxygen position, unless
+        origin = get_dummy_position(rM, rH1, rH2, self.origin_dist)
+
+        # Find positions of the dummy atoms
         if self.calculate_dummy:
-            # TODO unwrap the positions of the oxygen and hydrogen atoms
             rM = get_dummy_position(rM, rH1, rH2, self.model_params["r_M"])
-            # update positions in charged atoms group TODO Decide if necessary
+            # update dummy atom positions in charged atoms group
             self.Matoms.positions = rM
 
-        # wrapping coords. Needed for the calculation of the
-        rMw = (
-            rM % self.dimensions
-        )  # mod of the positions with respect to the box dimensions
+        # wrapping coords. Needed for the binning.
+        # mod of the positions with respect to the box dimensions
+        origin_w = origin % self.dimensions
+        r_water_w = r_water % self.dimensions
 
         # calculate the dipole and quadrupole moments of the water molecules
         mus = calculate_dip(rM, [rH1, rH2], qH)
-        # print(Q.shape)
-        quad = calculate_Q(rM, rH1, rH2, qH)  # full tensor
+        quad = calculate_Q(rM, rH1, rH2, qH, origin)  # full tensor
 
         # calculate the first angle moment by projecting on z axis
         # first axis is atoms, second axis are the cartesian components
         # TODO: deal with warning that occurs on first frame
         cos_theta = mus[:, self._axind] / np.linalg.norm(mus, axis=1)
 
-        # if self._universe.trajectory.frame % 1000 == 0:
-        # print('cos(theta)',cos_theta[100],mus[100])
-
         cos_moment_2 = 0.5 * (3 * cos_theta**2 - 1)
 
-        # z position
-        zMw = rMw[:, self._axind]
-        # zposes = vstack([zM]*3).T
+        # z position used for binning
+        if SPREAD:
+            zMw = r_water_w[:, self._axind]
+
+            def spread_f(x: NDArray) -> NDArray:
+                return x.repeat(3)
+        else:
+            zMw = origin_w[:, self._axind]
+
+            def spread_f(x: NDArray) -> NDArray:
+                return x
 
         # Calculate the histograms, with positions on the dummy atom,
         # weighted by the property being binned
         mu_hist = np.vstack(
             [
-                histogram1d(zMw, bins=self.nbins, weights=mus[:, i], range=self.range)
+                histogram1d(
+                    zMw, bins=self.nbins, weights=spread_f(mus[:, i]), range=self.range
+                )
                 for i in range(3)
             ]
         )
@@ -410,7 +479,7 @@ class Multipoles(AnalysisBase):
                         zMw,
                         bins=self.nbins,
                         range=self.range,
-                        weights=quad[:, i, j],
+                        weights=spread_f(quad[:, i, j]),
                     )
                     for i in range(3)
                 ]
@@ -418,26 +487,35 @@ class Multipoles(AnalysisBase):
             ]
         )
 
-        # assert (np.abs(Q_hist_fast-Q_hist) < 1e-17).all()
-
+        # un-weighted
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
-        # un weighted!
 
         # NOTE: These are divided by the number of molecules in each bin;
-        # i.e., average of  cos(theta) per bin
+        # i.e., average of cos(theta) per bin
         angle_hist = np.nan_to_num(
-            histogram1d(zMw, bins=self.nbins, weights=cos_theta, range=self.range)
+            histogram1d(
+                zMw, bins=self.nbins, weights=spread_f(cos_theta), range=self.range
+            )
             / mol_hist
         )  # divided by the number of molecules
 
         # convert nans in profiles to zeros -> assumes that if density is zero then
         # can't have any angles!!!!
         angle_sq_hist = np.nan_to_num(
-            histogram1d(zMw, bins=self.nbins, weights=cos_moment_2, range=self.range)
+            histogram1d(
+                zMw, bins=self.nbins, weights=spread_f(cos_moment_2), range=self.range
+            )
             / mol_hist
         )
 
-        # TODO: Change to use the moved positions of the oxygen charges!
+        # NOTE: Asserting that the oxygen charges have been updated to be the dummy positions
+        assert np.all(
+            self.charged_atoms.select_atoms(
+                f"{self.type_or_name} {self.Matoms.types[0]}"
+            ).positions
+            == self.Matoms.positions
+        ), "Positions not set to dummy atom positions"
+
         charge_hist = histogram1d(
             (self.charged_atoms.positions % self.dimensions)[:, self._axind],
             bins=self.nbins,
@@ -452,12 +530,14 @@ class Multipoles(AnalysisBase):
             weights=self.ions.charges,
             range=self.range,
         )
-        # positions of water atoms
+
+        # positions of all water atoms
         water_positions = np.concatenate([rM, rH1, rH2])
 
         # Charges of water atoms
         water_charges = np.concatenate([self.Matoms.charges, self.Hatoms.charges])
         assert water_positions.shape[0] == water_charges.shape[0]
+
         charge_water_hist = histogram1d(
             (water_positions % self.dimensions)[:, self._axind],
             bins=self.nbins,
@@ -481,18 +561,19 @@ class Multipoles(AnalysisBase):
     def _conclude(self):
         # k = 6.022e-1  # divide by avodagro and convert from A3 to cm3
         """
+        The final stage of the `Analysis` class.
+
         Distance units are AA
         Charge units are C
 
         mu - eAA/AA^3 -> C/AA^2
         Q - eAA^2/AA^3 -> C/AA
         rho_q - e/AA^3 -> C/AA^3
-        TODO: Add option to keep in e/AA^N
 
         NOTE:
         Results are saved by normalising cumulative sums of the properties.
-        Also now returns a `results` attribute.
         """
+        # TODO: Add option to keep units in e/AA^N
 
         # Average results over the  number of configurations
 
@@ -522,6 +603,9 @@ class Multipoles(AnalysisBase):
 
     ## Helper methods
     def _tally_results(self, result: FrameResult):
+        """
+        Add a frame-result to the running totals.
+        """
         # running sum!
         self._results_tally.dipole += result.dipole
         self._results_tally.quadrupole += result.quadrupole
@@ -539,19 +623,82 @@ class Multipoles(AnalysisBase):
 # Library Functions
 
 
-def com(ag: mda.AtomGroup) -> NDArray:
-    return (ag.positions * ag.masses[:, np.newaxis]).sum(axis=0) / ag.masses.sum()
+def calculate_res_splits(atoms: mda.AtomGroup) -> NDArray:
+    """
+    Generate a list of ending offsets for each residue.
+
+    This method requires that the atoms of each residue are contiguous in
+    the atom array. This may not be true for larger molecules
+
+    """
+
+    # FIXME: assert that all atoms in a residue are contiguous
+    # An easy way would be to sort atoms by residue.
+
+    splits = _find_res_splits(atoms.resids, atoms.n_residues)
+
+    return splits
 
 
-def com_residues(residues: mda.ResidueGroup) -> NDArray:
+@jit()
+def _find_res_splits(res_ids: NDArray, n_res: int) -> NDArray:
+    """ """
+    # FIXME: assert that atoms of a residue are all contiguous.
+
+    current_res_type = res_ids[0]
+
+    stack_top = 0
+    res_splits = np.zeros((n_res,), dtype="int")
+
+    for i, r in enumerate(res_ids):
+        if r != current_res_type:
+            assert stack_top <= n_res - 1
+            res_splits[stack_top] = int(i)
+            current_res_type = r
+            stack_top += 1
+
+    n_atoms = len(res_ids)
+    res_splits[n_res - 1] = n_atoms
+
+    return res_splits
+
+
+@jit
+def com(positions: NDArray, masses: NDArray) -> NDArray:
+    """
+    Calculate the Centre of Mass from the provided positions and masses.
+    """
+    return (positions * masses[:, np.newaxis]).sum(axis=0) / masses.sum()
+
+
+@jit()
+def com_residues(
+    residue_indexes: NDArray, positions: NDArray, masses: NDArray
+) -> NDArray:
     """
     Calculate the Centre of Mass for each residue in the system.
-    """
-    output = np.zeros((residues.n_residues, 3))
 
-    # TODO: Find a way to avoid this likely slow iteration over residues.
-    for i, res in enumerate(residues):
-        output[i] = com(res.atoms)
+    Parameters
+    ---------
+    residue_starts
+        An array of the inital offsets of the first item in each residue
+    positions
+        Atom group of the residue
+
+    Warnings
+    --------
+    All vectors must be sorted by residue ID.
+    """
+    output = np.zeros((len(residue_indexes), 3))
+    start_idx = 0
+
+    for i, split in enumerate(residue_indexes):
+        output[i] = com(
+            positions[start_idx:split],
+            masses[start_idx:split],
+        )
+
+        start_idx = split
 
     return output
 
@@ -565,26 +712,41 @@ def calculate_dip(Mpos, Hposes, qH):
     # I guess not maybe...
     # TODO: Allow a different origin for dipole moment calculation
 
-    return ((Hposes[0] - Mpos) + (Hposes[1] - Mpos)) * qH
+    dip_dir = (Hposes[0] - Mpos) + (Hposes[1] - Mpos)
+
+    return dip_dir * qH
 
 
-def calculate_dip_residues(residues: mda.ResidueGroup, origins: NDArray) -> NDArray:
+@jit()
+def calculate_dip_residues(
+    residue_offsets: NDArray,
+    positions: NDArray,
+    charges: NDArray,
+    origins: NDArray,
+) -> NDArray:
     """
     Calculate the dipole moment of each residue (molecule) in the system.
     """
 
-    output = np.zeros((residues.n_residues, 3))
+    output = np.zeros((len(residue_offsets), 3))
+    start_idx = 0
+
+    assert len(residue_offsets) == len(origins), "dbg: Mismatched number or residues"
 
     # TODO: Find a way to avoid this likely slow iteration over residues.
-    for i, (com, res) in enumerate(zip(origins, residues)):
-        output[i] = calculate_dip_ag(res.atoms.positions, res.atoms.charges, com)
+    for i, split in enumerate(residue_offsets):
+        output[i] = calculate_dip_ag(
+            positions[start_idx:split], charges[start_idx:split], origins[i]
+        )
+        start_idx = split
 
     return output
 
 
+@jit()
 def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
     """
-    Calculate the dipole moment of an atom group, relative to an origin
+    Calculate the dipole moment of the provided atoms, relative to an origin
 
     Arguments
     ---------
@@ -599,7 +761,61 @@ def calculate_dip_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> N
     return (charges[:, np.newaxis] * (positions - origin)).sum(axis=0)
 
 
-def check_types_or_names(universe: mda.Universe) -> str:
+@jit()
+def calculate_Q_residues(
+    residue_indexes: NDArray,
+    positions: NDArray,
+    charges: NDArray,
+    origins: NDArray,
+) -> NDArray:
+    """
+    Calculate the dipole moment of each residue (molecule) in the system.
+    """
+
+    output = np.zeros((len(residue_indexes), 3, 3))
+    start_idx = 0
+
+    # TODO: Find a way to avoid this likely slow iteration over residues.
+    for i, split in enumerate(residue_indexes):
+        output[i] = calculate_Q_ag(
+            positions[start_idx:split], charges[start_idx:split], origins[i]
+        )
+        start_idx = split
+
+    return output
+
+
+@jit()
+def calculate_Q_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
+    """
+    Calculate the Quadrupole Moment of an atom group, relative to a provided
+
+    Arguments
+    ---------
+    positions:
+        A (N,3) numpy array of atom positions
+    charges:
+        A (N,) numpy array of atomic charges in the molecule
+    origin:
+        The origin used for the quadrupole moment calculation. Should have shape (3,)
+    """
+
+    pos_rel = positions - origin
+
+    result = np.zeros((3, 3))
+
+    # TODO: probably could write this in numpy primatives without
+    for i in range(len(pos_rel)):
+        q = charges[i]
+        p = pos_rel[i]
+        for j in range(3):
+            for k in range(3):
+                result[j, k] += q * p[j] * p[k]
+
+    return 0.5 * result
+
+
+def _check_types_or_names(universe: mda.Universe) -> str:
     """
     Determine whether the `mda.Universe` is using names or types for the atom types
     """
@@ -616,27 +832,8 @@ def check_types_or_names(universe: mda.Universe) -> str:
     return type_or_name
 
 
-def calculate_Q_no_numba(Mpos, H1, H2, qH):
-    """Calculating the quadrupoles. Rather than iterating over per atom,
-    iterates over per component. Iterate over 9 things rather than 2000
-    """
-
-    # TODO: add more general implementation for residue/fragment groupings
-    # and a water calculation.
-
-    v1 = H1 - Mpos
-    v2 = H2 - Mpos
-
-    # the outer product of the same N*3 array to give a N*3*3 array
-    v1_sq = v1.reshape([-1, 3, 1]) @ v1.reshape([-1, 1, 3])
-    # the -1 in the first dimension indicates reshaping so that
-    v2_sq = v2.reshape([-1, 3, 1]) @ v2.reshape([-1, 1, 3])
-
-    return 0.5 * (qH * v1_sq + qH * v2_sq)
-
-
 @jit(nopython=True)
-def calculate_Q(Mpos, H1, H2, qH):
+def calculate_Q(Mpos, H1, H2, qH, origin):
     """New version of calculating the charges, rather than iterating over per atom,
     iterate over per component??? iterate over 9 things rather than 2000
     TODO add more general implementation for residue/fragment groupings
@@ -647,37 +844,22 @@ def calculate_Q(Mpos, H1, H2, qH):
 
     """
 
-    v1 = H1 - Mpos
-    v2 = H2 - Mpos
+    v1 = H1 - origin
+    v2 = H2 - origin
+    v3 = Mpos - origin
 
     result = np.zeros((len(v1), 3, 3))
 
     for i in range(len(v1)):
         for j in range(3):
             for k in range(3):
-                result[i, j, k] = v1[i, j] * v1[i, k] + v2[i, j] * v2[i, k]
+                result[i, j, k] = (
+                    v1[i, j] * v1[i, k]
+                    + v2[i, j] * v2[i, k]
+                    - 2.0 * v3[i, j] * v3[i, k]  # Term due to -ve charge
+                )
 
     return 0.5 * (qH * result)
-
-
-def get_dummy_position_no_numba(
-    xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float
-) -> NDArray:
-    """
-    Calculate the position of the dummy atoms from the positions of the oxygen
-    and hydrogen atoms
-    Assumes that hydrogen atoms for a given molecule have neighbouring indices.
-    """
-    dx1 = xH1 - xO
-    dx2 = xH2 - xO
-    # TODO: faster to pass in bond length manually? Not useful for the case of flexible
-    # water models
-    dxM = dx1 + dx2
-
-    # Normalise the vector
-    # Indexing ensures normalisation over correct axis and gives correct shape
-    dxM = dxM / la.norm(dxM, axis=1)[:, None]
-    return xO + dM * dxM
 
 
 @jit(nopython=True)
@@ -704,9 +886,8 @@ def get_dummy_position(xO: NDArray, xH1: NDArray, xH2: NDArray, dM: float) -> ND
     return xO + dM * dxM
 
 
-# TODO: These type annotations don't seem to work when called
-@jit((float32[:, :], float32[:, :], float32[:, :], float32[:]), nopython=True)
-def unwrap_water_coords(rO, rH1, rH2, box):
+@jit(nopython=True)
+def _unwrap_water_coords(rO, rH1, rH2, box):
     """
     Iterate over atoms then over dimensions, check if bond is longer
     than half box length and apply unwrapping if necessary
