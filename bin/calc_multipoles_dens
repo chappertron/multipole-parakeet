@@ -247,6 +247,7 @@ if __name__ == "__main__":
                 multip.results.quadrupole[0, 1, :],
                 multip.results.quadrupole[0, 2, :],
                 multip.results.quadrupole[1, 2, :],
+                multip.results.octupole[2, 2, 2, :],
                 multip.results.mol_density,
                 multip.results.cos_theta,
                 multip.results.angular_moment_2,
@@ -256,7 +257,7 @@ if __name__ == "__main__":
                 phi,
             ]
         ).T,
-        header="coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz "
+        header="coord charge_dens P_x P_y P_z Q_xx Q_yy Q_zz Q_xy Q_xz Q_yz O_zzz "
         "rho_mol cos_theta cos_theta_moment_2 qdens_water qdens_ions efield phi",
     )
 

@@ -22,6 +22,7 @@ class FrameResult:
     charge_dens: NDArray
     dipole: NDArray
     quadrupole: NDArray
+    octupole: NDArray
     qdens_ions: NDArray
     qdens_water: NDArray
     mol_density: NDArray
@@ -211,6 +212,7 @@ class Multipoles(AnalysisBase):
         self._results_tally = FrameResult(
             quadrupole=np.zeros((3, 3, self.nbins)),
             dipole=np.zeros((3, self.nbins)),
+            octupole=np.zeros((3, 3, 3, self.nbins)),
             charge_dens=np.zeros(self.nbins),
             cos_theta=np.zeros(self.nbins),
             angular_moment_2=np.zeros(self.nbins),
@@ -314,6 +316,8 @@ class Multipoles(AnalysisBase):
 
         quad = calculate_Q_residues(res_splits, atoms.positions, atoms.charges, rM)
 
+        oct = calculate_oct_residues(res_splits, atoms.positions, atoms.charges, rM)
+
         # wrapping coords. Needed for the binning.
         rMw = (
             rM % self.dimensions
@@ -354,6 +358,24 @@ class Multipoles(AnalysisBase):
             ]
         )
 
+        oct_hist = np.stack(
+            [
+                [
+                    [
+                        histogram1d(
+                            zMw,
+                            bins=self.nbins,
+                            range=self.range,
+                            weights=oct[:, i, j, k],
+                        )
+                        for i in range(3)
+                    ]
+                    for j in range(3)
+                ]
+                for k in range(3)
+            ]
+        )
+
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
         # un weighted!
 
@@ -389,6 +411,7 @@ class Multipoles(AnalysisBase):
         results = FrameResult(
             dipole=mu_hist,
             quadrupole=Q_hist,
+            octupole=oct_hist,
             charge_dens=charge_hist,
             qdens_ions=charge_ion_hist,
             qdens_water=np.zeros(self.nbins),
@@ -487,6 +510,8 @@ class Multipoles(AnalysisBase):
             ]
         )
 
+        oct_hist = np.zeros((3, 3, 3, self.nbins))
+
         # un-weighted
         mol_hist = histogram1d(zMw, bins=self.nbins, range=self.range)
 
@@ -548,6 +573,7 @@ class Multipoles(AnalysisBase):
         results = FrameResult(
             dipole=mu_hist,
             quadrupole=Q_hist,
+            octupole=oct_hist,
             charge_dens=charge_hist,
             qdens_ions=charge_ion_hist,
             qdens_water=charge_water_hist,
@@ -591,6 +617,7 @@ class Multipoles(AnalysisBase):
             charge_dens=tally.charge_dens / n_frames / vol * e,
             dipole=tally.dipole / n_frames / vol * e,
             quadrupole=tally.quadrupole / n_frames / vol * e,
+            octupole=tally.octupole / n_frames / vol * e,
             qdens_ions=tally.qdens_ions / n_frames / vol * e,
             qdens_water=tally.qdens_water / n_frames / vol * e,
             # divide by the volume and number of frames used and
@@ -609,6 +636,7 @@ class Multipoles(AnalysisBase):
         # running sum!
         self._results_tally.dipole += result.dipole
         self._results_tally.quadrupole += result.quadrupole
+        self._results_tally.octupole += result.octupole
 
         self._results_tally.charge_dens += result.charge_dens
         self._results_tally.qdens_ions += result.qdens_ions
@@ -769,7 +797,7 @@ def calculate_Q_residues(
     origins: NDArray,
 ) -> NDArray:
     """
-    Calculate the dipole moment of each residue (molecule) in the system.
+    Calculate the quadrupole moment of each residue (molecule) in the system.
     """
 
     output = np.zeros((len(residue_indexes), 3, 3))
@@ -813,6 +841,61 @@ def calculate_Q_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDA
                 result[j, k] += q * p[j] * p[k]
 
     return 0.5 * result
+
+
+@jit()
+def calculate_oct_residues(
+    residue_indexes: NDArray,
+    positions: NDArray,
+    charges: NDArray,
+    origins: NDArray,
+) -> NDArray:
+    """
+    Calculate the octupole moment of each residue (molecule) in the system.
+    """
+
+    output = np.zeros((len(residue_indexes), 3, 3, 3))
+    start_idx = 0
+
+    # TODO: Find a way to avoid this likely slow iteration over residues.
+    for i, split in enumerate(residue_indexes):
+        output[i] = calculate_oct_ag(
+            positions[start_idx:split], charges[start_idx:split], origins[i]
+        )
+        start_idx = split
+
+    return output
+
+
+@jit()
+def calculate_oct_ag(positions: NDArray, charges: NDArray, origin: NDArray) -> NDArray:
+    """
+    Calculate the Octupole Moment of an atom group, relative to a provided
+
+    Arguments
+    ---------
+    positions:
+        A (N,3) numpy array of atom positions
+    charges:
+        A (N,) numpy array of atomic charges in the molecule
+    origin:
+        The origin used for the quadrupole moment calculation. Should have shape (3,)
+    """
+
+    pos_rel = positions - origin
+
+    result = np.zeros((3, 3, 3))
+
+    # TODO: probably could write this in numpy primatives without
+    for i in range(len(pos_rel)):
+        q = charges[i]
+        p = pos_rel[i]
+        for j in range(3):
+            for k in range(3):
+                for l in range(3):
+                    result[j, k, l] += q * p[j] * p[k] * p[l]
+
+    return result / 6.0
 
 
 def _check_types_or_names(universe: mda.Universe) -> str:
