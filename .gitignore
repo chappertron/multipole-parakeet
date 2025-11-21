@@ -140,8 +140,6 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-mda
-np
 multipole/__pycache__/__init__.cpython-38.pyc
 multipole/__pycache__/multipole_dens.cpython-38.pyc
 
